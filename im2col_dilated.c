@@ -17,10 +17,8 @@ float im2col_get_pixel(float *im, int height, int width, int channels,int row, i
     return im[col + width*(row + height*channel)];
 }
 
-float* im2col_dilated_cpu(float* data_im,
-     int channels,  int height,  int width,
-     int ksize,  int stride, int pad, int dilate_rate) 
-{
+// TODO: dilation is not working properly. Need to manually dilate kernel for im2col. Need to fix later.
+float* im2col_dilated_cpu(float* data_im,int channels,  int height,  int width,int ksize,  int stride, int pad, int dilate_rate) {
     int c,h,w;
     int dilate_ksize = (dilate_rate - 1) * (ksize + 1) + ksize;
     int height_col = (height + 2*pad - dilate_ksize) / stride + 1;
@@ -38,15 +36,11 @@ float* im2col_dilated_cpu(float* data_im,
                 int im_col = w_offset * dilate_rate + w * stride - 1;
                 int col_index = (c * height_col + h) * width_col + w;
                 data_col[col_index] = im2col_get_pixel(data_im, height, width, channels,im_row, im_col, c_im, pad);
-                //printf("%.f ", data_col[col_index]);
             }
-            //printf("\n");
         }
-        //printf("\n");
     }
     
     return data_col;
-
 }
 
 
