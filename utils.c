@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <utils.h>
 #include<stdio.h>
+#include<string.h>
 
 // Safe free
 void free_(float* ptr){
@@ -10,20 +11,69 @@ void free_(float* ptr){
 	}
 }
 
+int check_tensor(struct tensor_ A, struct tensor_ B) {
+	if (A.SIZE != B.SIZE) {
+		printf("Output SIZE Incorrect!\n");
+		return 0;
+	}
+	for (int i = 0; i < A.SIZE; i++) {
+		if (A.data[i] != B.data[i]){
+			printf("Output ELEMENT Incorrect!\n");
+			return 0;
+		}
+	}
+	printf("Output Correct!\n");
+	return 1;
+}
+
 float* transpose(float *input, const int N,const int C,const int H, const int W) {
 	float* inputT = (float*)malloc(sizeof(float) * N*C*H*W);
-    // #pragma omp parallel for
-	for(int n = 0; n<N; n++) {
+	int n;
+	#pragma omp parallel for
+	for(n = 0; n<N; n++) {
 		for(int c = 0; c <C; c++) {
-			for(int hw = 0; hw<H*W; hw++) {
-				int i = hw/H;
-				int j = hw%H;
-				inputT[n*C*H*W+c*H*W + hw] = input[n*C*H*W+c*H*W + W*j+i];
+			for(int h = 0; h<H; h++) {
+				for (int w = 0; w < W; w++) {
+					inputT[n * C * H * W + c * H * W + w*H+h] = input[n * C * H * W + c * H * W + W * h + w];
+				}
 			}
 		}
 	}
 	return inputT;
 }
+
+float* NCHW_2_NHWC(float* input, const int N, const int C, const int H, const int W) {
+	float* inputT = (float*)malloc(sizeof(float) * N * C * H * W);
+	int n;
+	#pragma omp parallel for
+	for (n = 0; n < N; n++) {
+		for (int c = 0; c < C; c++) {
+			for (int h = 0; h < H; h++) {
+				for (int w = 0; w < W; w++) {
+					inputT[find_NCHW_idx(n,h,w,c,N,H,W,C)] = input[find_NCHW_idx(n, c, h, w, N, C, H, W)];
+				}
+			}
+		}
+	}
+	return inputT;
+}
+
+float* NHWC_2_NCHW(float* input, const int N, const int C, const int H, const int W) {
+	float* inputT = (float*)malloc(sizeof(float) * N * C * H * W);
+	int n;
+	#pragma omp parallel for
+	for (n = 0; n < N; n++) {
+		for (int h = 0; h < H; h++) {
+			for (int w = 0; w < W; w++) {
+				for (int c = 0; c < C; c++) {
+					inputT[find_NCHW_idx(n, c, h, w, N, C, H, W)] = input[find_NCHW_idx(n, h, w, c, N, H, W, C)];
+				}
+			}
+		}
+	}
+	return inputT;
+}
+
 
 float* slice(float* input,int start,int end){
 	float* input_slice = (float*)malloc(sizeof(float) * (end-start));

@@ -5,32 +5,35 @@
 #include <im2col.h>
 #include <utils.h>
 #include <string.h>
-//#include <winograd_transform.h>
+#include <omp.h>
+#include <winograd_transform.h>
+
+
 
 // Naive implementation of direct convolution on CPU. Tensor in NCHW layout.
 struct tensor_ conv2d_direct_convolution_cpu(struct tensor_ input, struct kernel_ kernel_raw){
 	struct kernel_ kernel = kernel_simple_dilation(kernel_raw);
 	int Hout = ((input.H + 2*kernel.padH - kernel.dilH * (kernel.H - 1) - 1)/kernel.strideH) + 1;
 	int Wout = ((input.W + 2*kernel.padW - kernel.dilW * (kernel.W - 1) - 1)/kernel.strideW) + 1;
-	float accum;
-	int input_idx, kernel_idx,hin,win;
 	float* C = (float*)malloc(sizeof(float) * input.N * Hout * Wout * kernel.Cout);
-	for (int n = 0; n < input.N;n++){
+	int n;
+	#pragma omp parallel for
+	for (n = 0; n < input.N;n++){
 		for (int cout = 0; cout < kernel.Cout; cout++){
 			for (int hout = 0; hout < Hout; hout++){
 				for (int wout = 0; wout < Wout; wout++){
-					accum = 0.0;
+					float accum = 0.0f;
 					for (int cin = 0; cin < input.C;cin++){
 						for (int hk = 0; hk < kernel.H;hk++){
 							for (int wk = 0; wk < kernel.W;wk++){	
-								hin = (hout * kernel.strideH + hk)-kernel.padH;
-								win = (wout * kernel.strideW + wk)-kernel.padW;
+								int hin = (hout * kernel.strideH + hk)-kernel.padH;
+								int win = (wout * kernel.strideW + wk)-kernel.padW;
 								if (hin < 0 || hin >= input.H || win < 0 || win >= input.W) {
 									accum += 0;
 								}
 								else {
-									input_idx = find_tensor_idx(n, cin, hin, win, input);
-									kernel_idx = find_kernel_idx(cout, cin, hk, wk, kernel);
+									int input_idx = find_tensor_idx(n, cin, hin, win, input);
+									int kernel_idx = find_kernel_idx(cout, cin, hk, wk, kernel);
 									accum += (input.data[input_idx] * kernel.data[kernel_idx]);	
 								}
 							}
@@ -53,7 +56,9 @@ struct tensor_ conv2d_im2col_GEMM_cpu(struct tensor_ input, struct kernel_ kerne
 	int Hout = ((input.H + 2*kernel.padH - kernel.dilH * (kernel.H - 1) - 1)/kernel.strideH) + 1;
 	int Wout = ((input.W + 2*kernel.padW - kernel.dilW * (kernel.W - 1) - 1)/kernel.strideW) + 1;
 	float* C =(float*)malloc(sizeof(float) * input.N * Hout * Wout * kernel.Cout);
-	for (int n = 0; n < input.N;n++){
+	int n;
+	#pragma omp parallel for
+	for (n = 0; n < input.N;n++){
 		float* A_n = slice(input.data,n* input.H * input.W * input.C, (n+1) * input.H * input.W * input.C);
 		//print_CHW(A_n, input.C, input.H, input.W);
 		float* A_col_n = im2col_dilated_cpu(A_n, input.C, input.H, input.W, kernel.H, kernel.strideH, kernel.padH,kernel.dilH);
@@ -87,17 +92,15 @@ struct tensor_ conv2d_dilated_winograd23s1d2_cpu1(struct tensor_ input_raw, stru
 	struct tensor_ input = tensor_pad(input_raw, kernel.padH, kernel.padW);
 	kernel.padH = 0;
 	kernel.padW = 0;
-	float tile;
-	int posH,posW,A_n_idx,tile_idx,C_idx;
 	int Hout = ((input.H + 2*kernel.padH - kernel.dilH * (kernel.H - 1) - 1)/kernel.strideH) + 1;
 	int Wout = ((input.W + 2*kernel.padW - kernel.dilW * (kernel.W - 1) - 1)/kernel.strideW) + 1;
 	float* C = (float*)malloc(sizeof(float) * input.N * Hout * Wout * kernel.Cout);
 	// 3x3 kernel dilation -> 5x5
 	struct kernel_ dilated_kernel = kernel_simple_dilation(kernel);
-	
-
 	// For each batch
-	for (int n = 0; n < input.N;n++){
+	int n;
+	#pragma omp parallel for
+	for (n = 0; n < input.N;n++){
 		float* A_n = slice(input.data,n* input.H * input.W * input.C, (n+1) * input.H * input.W * input.C);
 		// For each tile group (4 tiles)
 		// Overlap = 4		
@@ -109,9 +112,9 @@ struct tensor_ conv2d_dilated_winograd23s1d2_cpu1(struct tensor_ input_raw, stru
 				for (int cin = 0; cin < input.C; cin++){		
 					for (int yy = 0; yy < 8; yy++){
 						for (int xx = 0; xx < 8; xx++){
-							posH = hin+yy;
-							posW = win+xx;
-							A_n_idx = cin*input.H*input.W+posH*input.W+posW;
+							int posH = hin+yy;
+							int posW = win+xx;
+							int A_n_idx = cin*input.H*input.W+posH*input.W+posW;
 							tile_group[cin*64+yy*8+xx] = A_n[A_n_idx];
 						}
 					}
@@ -125,10 +128,10 @@ struct tensor_ conv2d_dilated_winograd23s1d2_cpu1(struct tensor_ input_raw, stru
 				for (int cout = 0; cout < kernel.Cout; cout++){		
 					for (int yy = 0; yy < 4; yy++){
 						for (int xx = 0; xx < 4; xx++){
-							posH = hin+yy;
-							posW = win+xx;
-							tile_idx = cout * 16 + yy * 4 + xx;
-							C_idx = find_NCHW_idx(n, cout, posH, posW, input.N, kernel.Cout, Hout, Wout);
+							int posH = hin+yy;
+							int posW = win+xx;
+							int tile_idx = cout * 16 + yy * 4 + xx;
+							int C_idx = find_NCHW_idx(n, cout, posH, posW, input.N, kernel.Cout, Hout, Wout);
 							C[C_idx] = tile_output[tile_idx];
 						}
 					}
@@ -145,12 +148,12 @@ struct tensor_ conv2d_dilated_winograd23s1d2_cpu1(struct tensor_ input_raw, stru
 
 
 int main(){		
-
-	int N = 1;
-	int Hin = 12;
-	int Win = 12;
-	int Cin = 1;
-	int Cout = 1;
+	omp_set_num_threads(4);
+	int N = 4;
+	int Hin = 64;
+	int Win = 64;
+	int Cin = 16;
+	int Cout = 16;
 	int Hk = 3;
 	int Wk = 3;
 	int dilH = 2;
@@ -165,26 +168,39 @@ int main(){
 	struct kernel_ kernel = { .data = B, .Cout = Cout, .Cin = Cin, .H = Hk, .W = Wk, .dilH = dilH, .dilW = dilW, .padH = padH, .padW = padW, .strideH = strideH, .strideW = strideW,.SIZE = Cout * Hk * Wk* Cin};
 
 	for (int i = 0; i <input.SIZE; i++) {
-		input.data[i] = i;
+		input.data[i] = 2;
 	}
 	for (int i = 0; i < kernel.SIZE; i++) {
-		kernel.data[i] = 3;
+		kernel.data[i] = 2;
 	}
 
 	//struct timespec start, stop;
 	//double time;
-	//if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}
-
+	//if(clock_gettime(clock_realtime, &start) == -1 ) { perror( "clock gettime" );}
+	clock_t start, end;
 	//print_kernel(kernel);
-	struct tensor_ output = conv2d_direct_convolution_cpu(input,kernel);
-	print_tensor(output);
+	start = clock();
+	struct tensor_ output1 = conv2d_direct_convolution_cpu(input,kernel);
+	end = clock();
+	printf("%f\n",(double)(end - start) / (double)(CLOCKS_PER_SEC));
+	//print_tensor(output1);
 
-	output = conv2d_im2col_GEMM_cpu(input, kernel);
-	print_tensor(output);
+	start = clock();
+	struct tensor_ output2 = conv2d_im2col_GEMM_cpu(input, kernel);
+	end = clock();
+	printf("%f\n", (double)(end - start) / (double)(CLOCKS_PER_SEC));
+	//print_tensor(output2);
 
-	output = conv2d_dilated_winograd23s1d2_cpu1(input, kernel);
-	print_tensor(output);
-
+	start = clock();
+	struct tensor_ output3 = conv2d_dilated_winograd23s1d2_cpu1(input, kernel);
+	end = clock();
+	printf("%f\n", (double)(end - start) / (double)(CLOCKS_PER_SEC));
+	//print_tensor(output3);
+	check_tensor(output1, output2);
+	check_tensor(output1, output3);
+	free_(output1.data);
+	free_(output2.data);
+	free_(output3.data);
 
 	//if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
 	//time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
@@ -192,7 +208,7 @@ int main(){
 
 	free_(input.data);
 	free_(kernel.data);
-	free_(output.data);
+	
 	return 0;
 }	
 

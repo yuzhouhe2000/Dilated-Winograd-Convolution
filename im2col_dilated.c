@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <utils.h>
 #include <math.h>
+#include <stdlib.h>
 
 
 float im2col_get_pixel(float *im, int height, int width, int channels,int row, int col, int channel, int pad)
@@ -98,13 +99,29 @@ float* col2im_dilated_cpu(float* data_col,
 
 float* im2col_mm(float* A, float* B,int X,int Y, int Z){
     float* C = (float*)malloc(sizeof(float) * X * Z);
-    for (int x=0;x<X;x++){
-		for (int z=0;z<Z;z++){
-            C[x*Z+z] = 0.0;
-			for (int y=0;y<Y;y++){
-				C[x*Z+z]+=A[x*Y+y]*B[y*Z+z];
-			}
-		}
-	}
+
+    // Transpose first (column majors)
+    float* BT = transpose(B,1,1,Y,Z);
+    int x;
+    #pragma omp parallel for
+    for (x = 0; x < X; x++) {
+        for (int z = 0; z < Z; z++) {
+            C[x * Z + z] = 0.0f;
+            for (int y = 0; y < Y; y++) {
+                C[x * Z + z] += A[x * Y + y] * BT[z * Y + y];
+            }
+        }
+    }
+ //   int x;
+ //   #pragma omp parallel for
+ //   for (x=0;x<X;x++){
+	//	for (int z=0;z<Z;z++){
+ //           C[x*Z+z] = 0.0f;
+	//		for (int y=0;y<Y;y++){
+	//			C[x*Z+z]+=A[x*Y+y]*B[y*Z+z];
+	//		}
+	//	}
+	//}
+    free_(BT);
     return C;
 }

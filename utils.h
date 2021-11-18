@@ -26,4 +26,6 @@ int find_CCHW_idx(int cout, int cin, int hk, int wk, int Cout, int Cin, int H, i
 void print_CHW(float* input, int C, int H, int W);
 float* transpose(float *input, const int N,const int C,const int H, const int W);
 struct tensor_ tensor_pad(struct tensor_ input, int padH, int padW);
-
+int check_tensor(struct tensor_ A, struct tensor_ B);
+float* NCHW_2_NHWC(float* input, const int N, const int C, const int H, const int W);
+float* NHWC_2_NCHW(float* input, const int N, const int C, const int H, const int W);

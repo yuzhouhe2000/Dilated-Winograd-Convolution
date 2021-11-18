@@ -3,6 +3,42 @@
 #include <time.h>
 #include <utils.h>
 #include <winograd_transform.h>
+#include <omp.h>
+
+// Define winograd transformation matrix.
+const float wino23s1d2_BT[4][7] = { {1.0f,0.0f,0.0f,0.0f,-1.0f,0.0f,0.0f},
+								   {0.0f,0.0f,1.0f,0.0f,1.0f,0.0f,0.0f},
+								   {0.0f,0.0f,-1.0f,0.0f,1.0f,0.0f,0.0f},
+								   {0.0f,0.0f,1.0f,0.0f,0.0f,0.0f,-1.0f} };
+
+const float wino23s1d2_G[4][5] = { {1.0f,0.0f,0.0f,0.0f,0.0f},
+								 {1.0f / 2,0.0f,1.0f / 2,0.0f,1.0f / 2},
+								 {1.0f / 2,0.0f,-1.0f / 2,0.0f,1.0f / 2},
+								 {0.0f,0.0f,0.0f,0.0f,1.0f} };
+
+const float wino23s1d2_AT[3][4] = { {1.0f,1.0f,1.0f,0.0f},
+								   {0.0f,0.0f,0.0f,0.0f},
+								   {0.0f,1.0f,-1.0f,-1.0f} };
+
+
+const float wino23s1d2_B[7][4] = { {1.0f,0.0f,0.0f,0.0f},
+								  {0.0f,0.0f,0.0f,0.0f},
+								  {0.0f,1.0f,-1.0f,1.0f},
+								  {0.0f,0.0f,0.0f,0.0f},
+								  {-1.0f,1.0f,1.0f,0.0f},
+								  {0.0f,0.0f,0.0f,0.0f},
+								  {0.0f,0.0f,0.0f,-1.0f} };
+
+const float wino23s1d2_GT[5][4] = { {1.0f,1.0f / 2,1.0f / 2,0.0f},
+								  {0.0f,0.0f,0.0f,0.0f},
+								  {0.0f,1.0f / 2,-1.0f / 2,0.0f},
+								  {0.0f,0.0f,0.0f,0.0f},
+								  {0.0f,1.0f / 2,1.0f / 2,1.0f} };
+
+const float wino23s1d2_A[4][3] = { {1.0f,0.0f,0.0f},
+								   {1.0f,0.0f,1.0f},
+								   {1.0f,0.0f,-1.0f},
+								   {0.0f,0.0f,-1.0f} };
 
 // TODO: organize code
 float* wino23s1d2_GgGT_cpu(struct kernel_ kernel,float* Gg){
@@ -25,7 +61,6 @@ float* wino23s1d2_GgGT_cpu(struct kernel_ kernel,float* Gg){
 			}
 		}
 	}
-
 	float* GgGT = (float*)malloc(sizeof(float)*kernel.Cout*kernel.Cin*4*4);
 	// (4x5),(5x4) -> (4,4)
 	for (int cout = 0; cout < kernel.Cout; ++cout){
@@ -77,6 +112,33 @@ float* wino23s1d2_BTxB_cpu(float* input_partition,int Cin,float* BTx){
 	}
 	return BTxB;
 }
+
+float* elementwise_mm_NHWC_ver_cpu(float* U, float* V, int Cout, int Cin) {
+	float* UT = NCHW_2_NHWC(U,Cout,Cin,4,4);
+	float* VT = NCHW_2_NHWC(V,1,Cin,4,4);
+
+	float accum;
+	float* M = (float*)malloc(sizeof(float) * Cout * 4 * 4);
+	// TODO: parallize element wise multiplication
+	for (int cout = 0; cout < Cout; ++cout) {
+		for (int h = 0; h < 4; ++h) {
+			for (int w = 0; w < 4; ++w) {
+				accum = 0.0f;
+				// TODO: maybe HWC instead of CHW? or change algorithm?
+				for (int cin = 0; cin < Cin; ++cin) {
+					accum += UT[find_CCHW_idx(cout,h,w,cin,Cout,4,4,Cin)] * VT[find_CCHW_idx(0, h, w, cin, 1, 4, 4, Cin)];
+				}
+				M[cout * 16 + h * 4 + w] = accum;
+			}
+		}
+	}
+	free_(U);
+	free_(V);
+	free_(UT);
+	free(VT);
+	return M;
+}
+
 
 float* elementwise_mm_cpu(float* U,float* V,int Cout,int Cin){
 	float accum;
@@ -142,7 +204,10 @@ float* tile_wino23s1d2_cpu(float* tile_group,struct kernel_ kernel,int Hout,int 
 	float* BTx = (float*)malloc(sizeof(float) * Cin * 4 * 7);
 	float* ATM = (float*)malloc(sizeof(float) * Cout * 3 * 4);
 
-	for(int tile_idx = 0;tile_idx<4;++tile_idx){
+	/*omp_set_num_threads(4); */
+	int tile_idx;
+	#pragma omp parallel for
+	for(tile_idx = 0;tile_idx<4;++tile_idx){
 		// TODO: parallel partition
 		// Divide into four partitions
 		int xadd = 0;
@@ -173,6 +238,8 @@ float* tile_wino23s1d2_cpu(float* tile_group,struct kernel_ kernel,int Hout,int 
 		//print_CHW(BTx, Cin, 4, 7);
 		//print_CHW(V,Cin, 4, 4);
 		float* M = elementwise_mm_cpu(U,V,Cout,Cin);
+		// NHWC is Slower because of transpose here
+		//float* M = elementwise_mm_NHWC_ver_cpu(U, V, Cout, Cin);
 		//printf("M:\n");
 		//print_CHW(M, Cout, 4, 4);
 		float* tile_partition = wino23s1d2_ATMA_cpu(M,Cout,ATM);
