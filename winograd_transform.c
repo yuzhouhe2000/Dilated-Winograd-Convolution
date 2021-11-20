@@ -21,25 +21,6 @@ const float wino23s1d2_AT[3][4] = { {1.0f,1.0f,1.0f,0.0f},
 								   {0.0f,1.0f,-1.0f,-1.0f} };
 
 
-const float wino23s1d2_B[7][4] = { {1.0f,0.0f,0.0f,0.0f},
-								  {0.0f,0.0f,0.0f,0.0f},
-								  {0.0f,1.0f,-1.0f,1.0f},
-								  {0.0f,0.0f,0.0f,0.0f},
-								  {-1.0f,1.0f,1.0f,0.0f},
-								  {0.0f,0.0f,0.0f,0.0f},
-								  {0.0f,0.0f,0.0f,-1.0f} };
-
-const float wino23s1d2_GT[5][4] = { {1.0f,1.0f / 2,1.0f / 2,0.0f},
-								  {0.0f,0.0f,0.0f,0.0f},
-								  {0.0f,1.0f / 2,-1.0f / 2,0.0f},
-								  {0.0f,0.0f,0.0f,0.0f},
-								  {0.0f,1.0f / 2,1.0f / 2,1.0f} };
-
-const float wino23s1d2_A[4][3] = { {1.0f,0.0f,0.0f},
-								   {1.0f,0.0f,1.0f},
-								   {1.0f,0.0f,-1.0f},
-								   {0.0f,0.0f,-1.0f} };
-
 // TODO: organize code
 float* wino23s1d2_GgGT_cpu(struct kernel_ kernel,float* Gg){
 	float accum;
@@ -49,9 +30,9 @@ float* wino23s1d2_GgGT_cpu(struct kernel_ kernel,float* Gg){
 	for (int cout = 0; cout < kernel.Cout; ++cout){
 		for (int cin = 0; cin < kernel.Cin; ++cin){
 			for (int i = 0; i < 4; ++i) {
-				for (int j = 0; j < 5; ++j) {
+				for (int j = 0; j < 5; j=j+2) {
 					accum = 0.0f;
-					for (int k = 0; k < 5; ++k) {
+					for (int k = 0; k < 5; k = k + 2) {
 						kernel_idx = find_kernel_idx(cout, cin, k, j, kernel);
 						accum += wino23s1d2_G[i][k] * kernel.data[kernel_idx];
 					}
@@ -68,9 +49,9 @@ float* wino23s1d2_GgGT_cpu(struct kernel_ kernel,float* Gg){
 			for (int i = 0; i < 4; ++i) {
 				for (int j = 0; j < 4; ++j) {
 					accum = 0.0f;
-					for (int k = 0; k < 5; ++k) {
+					for (int k = 0; k < 5; k=k+2) {
 						Gg_idx = find_CCHW_idx(cout, cin, i, k, kernel.Cout, kernel.Cin, 4, 5);
-						accum += Gg[Gg_idx] * wino23s1d2_GT[k][j];
+						accum += Gg[Gg_idx] * wino23s1d2_G[j][k];
 					}
 					GgGT[cout*kernel.Cin*16+cin*16+i*4+j] = accum;
 				}
@@ -87,9 +68,9 @@ float* wino23s1d2_BTxB_cpu(float* input_partition,int Cin,float* BTx){
 	// (4x7),(7x7) -> (4,7)
 	for (int cin = 0; cin < Cin; ++cin){
 		for (int i = 0; i < 4; ++i) {
-			for (int j = 0; j < 7; ++j) {
+			for (int j = 0; j < 7; j=j+2) {
 				accum = 0.0f;
-				for (int k = 0; k < 7; ++k) {
+				for (int k = 0; k < 7; k=k+2) {
 					accum += wino23s1d2_BT[i][k] * input_partition[cin*49+k*7+j];
 				}
 				BTx[cin *28 + i * 7 + j] = accum;
@@ -103,8 +84,8 @@ float* wino23s1d2_BTxB_cpu(float* input_partition,int Cin,float* BTx){
 		for (int i = 0; i < 4; ++i) {
 			for (int j = 0; j < 4; ++j) {
 				accum = 0.0f;
-				for (int k = 0; k < 7; ++k) {
-					accum += BTx[cin * 28 + i * 7 + k] * wino23s1d2_B[k][j];
+				for (int k = 0; k < 7; k=k+2) {
+					accum += BTx[cin * 28 + i * 7 + k] * wino23s1d2_BT[j][k];
 				}
 				BTxB[cin*16+i*4+j] = accum;
 			}
@@ -167,7 +148,7 @@ float* wino23s1d2_ATMA_cpu(float* M,int Cout,float* ATM){
 	// TODO: faster MM  
 	// (3x4),(4x4) -> (3,4)
 	for (int cout = 0; cout < Cout; ++cout){
-		for (int i = 0; i < 3; ++i) {
+		for (int i = 0; i < 3; i=i+2) {
 			for (int j = 0; j < 4; ++j) {
 				accum = 0.0f;
 				for (int k = 0; k < 4; ++k) {
@@ -181,11 +162,11 @@ float* wino23s1d2_ATMA_cpu(float* M,int Cout,float* ATM){
 	float* ATMA = (float*)malloc(sizeof(float)*Cout*3*3);
 	// (3x4),(4x3) -> (3,3)
 	for (int cout = 0; cout < Cout; ++cout){
-		for (int i = 0; i < 3; ++i) {
-			for (int j = 0; j < 3; ++j) {
+		for (int i = 0; i < 3; i = i+2) {
+			for (int j = 0; j < 3; j =j+2) {
 				accum = 0.0f;
 				for (int k = 0; k < 4; ++k) {
-					accum += ATM[cout*12+i*4+k] * wino23s1d2_A[k][j];
+					accum += ATM[cout*12+i*4+k] * wino23s1d2_AT[j][k];
 				}
 				ATMA[cout*9+i*3+j] = accum;
 			}

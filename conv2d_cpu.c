@@ -149,10 +149,10 @@ struct tensor_ conv2d_dilated_winograd23s1d2_cpu1(struct tensor_ input_raw, stru
 int main(void){		
 	omp_set_num_threads(4);
 	int N = 4;
-	int Hin = 64;
-	int Win = 64;
-	int Cin = 16;
-	int Cout = 16;
+	int Hin = 36;
+	int Win = 36;
+	int Cin = 32;
+	int Cout = 32;
 	int Hk = 3;
 	int Wk = 3;
 	int dilH = 2;
@@ -167,10 +167,10 @@ int main(void){
 	struct kernel_ kernel = { .data = B, .Cout = Cout, .Cin = Cin, .H = Hk, .W = Wk, .dilH = dilH, .dilW = dilW, .padH = padH, .padW = padW, .strideH = strideH, .strideW = strideW,.SIZE = Cout * Hk * Wk* Cin};
 
 	for (int i = 0; i <input.SIZE; i++) {
-		input.data[i] = 2;
+		input.data[i] = 5.99f;
 	}
 	for (int i = 0; i < kernel.SIZE; i++) {
-		kernel.data[i] = 2;
+		kernel.data[i] = 5.99f;
 	}
 
 	struct timespec start, stop;

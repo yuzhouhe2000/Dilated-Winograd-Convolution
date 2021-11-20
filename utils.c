@@ -2,6 +2,7 @@
 #include "utils.h"
 #include<stdio.h>
 #include<string.h>
+#include <math.h>
 
 // Safe free
 void free_(float* ptr){
@@ -11,13 +12,20 @@ void free_(float* ptr){
 	}
 }
 
+void fill(float* input,int SIZE){
+	for(int i = 0;i<SIZE;i++){
+		input[i] = 0.0f;
+	}
+}
+
 int check_tensor(struct tensor_ A, struct tensor_ B) {
 	if (A.SIZE != B.SIZE) {
 		printf("Output SIZE Incorrect!\n");
 		return 0;
 	}
 	for (int i = 0; i < A.SIZE; i++) {
-		if (A.data[i] != B.data[i]){
+		// accept if error < 0.01 * true value
+		if (fabs(A.data[i] - B.data[i]) > fabs(A.data[i]*0.01)){
 			printf("Output ELEMENT Incorrect!\n");
 			return 0;
 		}
