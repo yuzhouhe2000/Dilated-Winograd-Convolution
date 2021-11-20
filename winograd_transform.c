@@ -6,7 +6,7 @@
 #include <omp.h>
 
 // Define winograd transformation matrix.
-const float wino23s1d2_BT[4][7] = { {1.0f,0.0f,0.0f,0.0f,-1.0f,0.0f,0.0f},
+const float wino23s1d2_BT[4][7] = {{1.0f,0.0f,0.0f,0.0f,-1.0f,0.0f,0.0f},
 								   {0.0f,0.0f,1.0f,0.0f,1.0f,0.0f,0.0f},
 								   {0.0f,0.0f,-1.0f,0.0f,1.0f,0.0f,0.0f},
 								   {0.0f,0.0f,1.0f,0.0f,0.0f,0.0f,-1.0f} };
@@ -29,7 +29,7 @@ float* wino23s1d2_GgGT_cpu(struct kernel_ kernel,float* Gg){
 	// (4x5),(5x5) -> (4,5)
 	for (int cout = 0; cout < kernel.Cout; ++cout){
 		for (int cin = 0; cin < kernel.Cin; ++cin){
-			for (int i = 0; i < 4; ++i) {
+			for (int i = 1; i < 3; ++i) {
 				for (int j = 0; j < 5; j=j+2) {
 					accum = 0.0f;
 					for (int k = 0; k < 5; k = k + 2) {
@@ -40,8 +40,20 @@ float* wino23s1d2_GgGT_cpu(struct kernel_ kernel,float* Gg){
 					Gg[Gg_idx] = accum;
 				}
 			}
+			// save computation from sparsity in row 0 and row 3
+			for (int j = 0; j < 5; j=j+2) {
+				Gg_idx = find_CCHW_idx(cout, cin, 0, j, kernel.Cout, kernel.Cin, 4, 5);
+				kernel_idx = find_kernel_idx(cout, cin, 0, j, kernel);
+				Gg[Gg_idx] = kernel.data[kernel_idx];
+				Gg_idx = find_CCHW_idx(cout, cin, 3, j, kernel.Cout, kernel.Cin, 4, 5);
+				kernel_idx = find_kernel_idx(cout, cin, 4, j, kernel);
+				Gg[Gg_idx] = kernel.data[kernel_idx];
+			}
+
 		}
 	}
+
+
 	float* GgGT = (float*)malloc(sizeof(float)*kernel.Cout*kernel.Cin*4*4);
 	// (4x5),(5x4) -> (4,4)
 	for (int cout = 0; cout < kernel.Cout; ++cout){
@@ -55,6 +67,10 @@ float* wino23s1d2_GgGT_cpu(struct kernel_ kernel,float* Gg){
 					}
 					GgGT[cout*kernel.Cin*16+cin*16+i*4+j] = accum;
 				}
+				Gg_idx = find_CCHW_idx(cout, cin, i, 0, kernel.Cout, kernel.Cin, 4, 5);
+				GgGT[cout*kernel.Cin*16+cin*16+i*4+0] = Gg[Gg_idx];
+				Gg_idx = find_CCHW_idx(cout, cin, i, 4, kernel.Cout, kernel.Cin, 4, 5);
+				GgGT[cout*kernel.Cin*16+cin*16+i*4+3] = Gg[Gg_idx];
 			}
 		}
 	}
@@ -75,6 +91,7 @@ float* wino23s1d2_BTxB_cpu(float* input_partition,int Cin,float* BTx){
 				}
 				BTx[cin *28 + i * 7 + j] = accum;
 			}
+			
 		}
 	}
 
@@ -202,28 +219,57 @@ float* tile_wino23s1d2_cpu(float* tile_group,struct kernel_ kernel,int Hout,int 
 			xadd = 1;
 		}
 		for (int cin = 0; cin < Cin; ++cin){
-			for (int yy = 0; yy < 7; ++yy){
-				for (int xx = 0; xx < 7; ++xx){
+			for (int yy = 0; yy < 7; yy=yy+2){
+				for (int xx = 0; xx < 7; xx = xx+2){
 					input_partition[cin*49+yy*7+xx] = tile_group[cin*64+(yy+yadd)*8+(xx+xadd)];
 				}
 			}
 		}
 
+		
+		
+		// struct timespec start, stop;
+		// double time;
+
 		//print_CHW(input_partition,Cin,7,7);
 		//perform winograd: stride=1, dilation=2, F(2x2,3x3)
+
+		// if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}
 		float* U = wino23s1d2_GgGT_cpu(kernel,Gg);
+		// if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
+		// time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
+		// printf("GgGT time is %.f ns\n", time*1e9);
+
 		//printf("U:\n");
 		//print_CHW(U, Cout * Cin, 4, 4);
+
+
+		// if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}
 		float* V = wino23s1d2_BTxB_cpu(input_partition,Cin,BTx);
+		// if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
+		// time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
+		// printf("BTxB time is %.f ns\n", time*1e9);
 		//printf("V:\n");
 		//print_CHW(BTx, Cin, 4, 7);
 		//print_CHW(V,Cin, 4, 4);
+
+		// if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}
 		float* M = elementwise_mm_cpu(U,V,Cout,Cin);
+		// if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
+		// time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
+		// printf("MM time is %.f ns\n", time*1e9);
+
 		// NHWC is Slower because of transpose here
 		//float* M = elementwise_mm_NHWC_ver_cpu(U, V, Cout, Cin);
 		//printf("M:\n");
 		//print_CHW(M, Cout, 4, 4);
+
+		// if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}
 		float* tile_partition = wino23s1d2_ATMA_cpu(M,Cout,ATM);
+		// if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
+		// time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
+		// printf("ATMA time is %.f ns\n", time*1e9);
+		
 		//printf("tile:\n");
 		//print_CHW(tile_partition, Cout, 3, 3);
 		

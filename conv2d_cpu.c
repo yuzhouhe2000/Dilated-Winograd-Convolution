@@ -23,8 +23,8 @@ struct tensor_ conv2d_direct_convolution_cpu(struct tensor_ input, struct kernel
 				for (int wout = 0; wout < Wout; wout++){
 					float accum = 0.0f;
 					for (int cin = 0; cin < input.C;cin++){
-						for (int hk = 0; hk < kernel.H;hk++){
-							for (int wk = 0; wk < kernel.W;wk++){	
+						for (int hk = 0; hk < kernel.H;hk=hk+2){
+							for (int wk = 0; wk < kernel.W;wk=wk+2){	
 								int hin = (hout * kernel.strideH + hk)-kernel.padH;
 								int win = (wout * kernel.strideW + wk)-kernel.padW;
 								if (hin < 0 || hin >= input.H || win < 0 || win >= input.W) {
@@ -149,10 +149,10 @@ struct tensor_ conv2d_dilated_winograd23s1d2_cpu1(struct tensor_ input_raw, stru
 int main(void){		
 	omp_set_num_threads(4);
 	int N = 4;
-	int Hin = 36;
-	int Win = 36;
-	int Cin = 32;
-	int Cout = 32;
+	int Hin = 32;
+	int Win = 32;
+	int Cin = 16;
+	int Cout = 16;
 	int Hk = 3;
 	int Wk = 3;
 	int dilH = 2;
@@ -167,11 +167,17 @@ int main(void){
 	struct kernel_ kernel = { .data = B, .Cout = Cout, .Cin = Cin, .H = Hk, .W = Wk, .dilH = dilH, .dilW = dilW, .padH = padH, .padW = padW, .strideH = strideH, .strideW = strideW,.SIZE = Cout * Hk * Wk* Cin};
 
 	for (int i = 0; i <input.SIZE; i++) {
-		input.data[i] = 5.99f;
+		input.data[i] = i;
 	}
 	for (int i = 0; i < kernel.SIZE; i++) {
-		kernel.data[i] = 5.99f;
+		kernel.data[i] = i;
 	}
+
+	printf("N = %d\n",N);
+	printf("Cout = %d\n",Cout);
+	printf("Cin = %d\n",Cin);
+	printf("Hin = %d\n",Hin);
+	printf("Win = %d\n",Win);
 
 	struct timespec start, stop;
 	double time;
@@ -179,21 +185,21 @@ int main(void){
 	struct tensor_ output1 = conv2d_direct_convolution_cpu(input,kernel);
 	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
 	time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
-	printf("CPU Direct convolution time is %f ns\n", time*1e9);
+	printf("CPU Direct convolution time is %.f ns\n", time*1e9);
 	//print_tensor(output1);
 
 	if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}
 	struct tensor_ output2 = conv2d_im2col_GEMM_cpu(input, kernel);
 	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
 	time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
-	printf("CPU Im2col time is %f ns\n", time*1e9);
+	printf("CPU Im2col time is %.f ns\n", time*1e9);
 	//print_tensor(output2);
 
 	if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}
 	struct tensor_ output3 = conv2d_dilated_winograd23s1d2_cpu1(input, kernel);
 	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
 	time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
-	printf("CPU Winograd time is %f ns\n", time*1e9);
+	printf("CPU Winograd time is %.f ns\n", time*1e9);
 	//print_tensor(output3);
 	check_tensor(output1, output2);
 	check_tensor(output1, output3);
