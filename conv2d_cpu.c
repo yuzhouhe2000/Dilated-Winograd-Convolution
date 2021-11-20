@@ -1,12 +1,11 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
-#include <conv.h>
-#include <im2col.h>
-#include <utils.h>
+#include "im2col.h"
+#include "utils.h"
 #include <string.h>
 #include <omp.h>
-#include <winograd_transform.h>
+#include "winograd_transform.h"
 
 
 
@@ -147,7 +146,7 @@ struct tensor_ conv2d_dilated_winograd23s1d2_cpu1(struct tensor_ input_raw, stru
 
 
 
-int main(){		
+int main(void){		
 	omp_set_num_threads(4);
 	int N = 4;
 	int Hin = 64;
@@ -174,27 +173,27 @@ int main(){
 		kernel.data[i] = 2;
 	}
 
-	//struct timespec start, stop;
-	//double time;
-	//if(clock_gettime(clock_realtime, &start) == -1 ) { perror( "clock gettime" );}
-	clock_t start, end;
-	//print_kernel(kernel);
-	start = clock();
+	struct timespec start, stop;
+	double time;
+	if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}
 	struct tensor_ output1 = conv2d_direct_convolution_cpu(input,kernel);
-	end = clock();
-	printf("%f\n",(double)(end - start) / (double)(CLOCKS_PER_SEC));
+	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
+	time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
+	printf("CPU Direct convolution time is %f ns\n", time*1e9);
 	//print_tensor(output1);
 
-	start = clock();
+	if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}
 	struct tensor_ output2 = conv2d_im2col_GEMM_cpu(input, kernel);
-	end = clock();
-	printf("%f\n", (double)(end - start) / (double)(CLOCKS_PER_SEC));
+	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
+	time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
+	printf("CPU Im2col time is %f ns\n", time*1e9);
 	//print_tensor(output2);
 
-	start = clock();
+	if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}
 	struct tensor_ output3 = conv2d_dilated_winograd23s1d2_cpu1(input, kernel);
-	end = clock();
-	printf("%f\n", (double)(end - start) / (double)(CLOCKS_PER_SEC));
+	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
+	time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
+	printf("CPU Winograd time is %f ns\n", time*1e9);
 	//print_tensor(output3);
 	check_tensor(output1, output2);
 	check_tensor(output1, output3);
@@ -202,9 +201,6 @@ int main(){
 	free_(output2.data);
 	free_(output3.data);
 
-	//if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
-	//time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
-	//printf("time is %f ns\n", time*1e9);
 
 	free_(input.data);
 	free_(kernel.data);

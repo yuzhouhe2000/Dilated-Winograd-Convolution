@@ -1,8 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
-#include <utils.h>
-#include <winograd_transform.h>
+#include "utils.h"
+#include "winograd_transform.h"
 #include <omp.h>
 
 // Define winograd transformation matrix.
