@@ -5,28 +5,11 @@
 #include "winograd_transform.h"
 #include <omp.h>
 
-// Winograd transformation matrix.
-// const float wino23s1d2_BT[4][7] = {{1.0f,0.0f,0.0f,0.0f,-1.0f,0.0f,0.0f},
-// 								   {0.0f,0.0f,1.0f,0.0f,1.0f,0.0f,0.0f},
-// 								   {0.0f,0.0f,-1.0f,0.0f,1.0f,0.0f,0.0f},
-// 								   {0.0f,0.0f,1.0f,0.0f,0.0f,0.0f,-1.0f} };
-
-// const float wino23s1d2_G[4][5] = { {1.0f,0.0f,0.0f,0.0f,0.0f},
-// 								 {1.0f / 2,0.0f,1.0f / 2,0.0f,1.0f / 2},
-// 								 {1.0f / 2,0.0f,-1.0f / 2,0.0f,1.0f / 2},
-// 								 {0.0f,0.0f,0.0f,0.0f,1.0f} };
-
-// const float wino23s1d2_AT[3][4] = { {1.0f,1.0f,1.0f,0.0f},
-// 								   {0.0f,0.0f,0.0f,0.0f},
-// 								   {0.0f,1.0f,-1.0f,-1.0f} };
-
-
-// TODO: organize code
+// GgGT is bottleneck when Cout and Cin is large
 float* wino23s1d2_GgGT_cpu(struct kernel_ kernel,float* Gg){
 	int kernel_idx, Gg_idx;
 	// (4x5),(5x5) -> (4,5)
 	// Sparse
-	float accum;
 	for (int cout = 0; cout < kernel.Cout; ++cout){
 		for (int cin = 0; cin < kernel.Cin; ++cin){
 			for (int j = 0; j < 5; j=j+2) {
@@ -67,11 +50,8 @@ float* wino23s1d2_BTxB_cpu(float* input_partition,int Cin,float* BTx){
 		for (int j = 0; j < 7; j=j+2) {
 			// when k = 0,2,4,6
 			BTx[cin * 28 + 0 * 7 + j] = input_partition[cin*49+0*7+j] - input_partition[cin*49+4*7+j];
-
 			BTx[cin * 28 + 1 * 7 + j] = input_partition[cin*49+2*7+j] + input_partition[cin*49+4*7+j];
-
 			BTx[cin * 28 + 2 * 7 + j] = - input_partition[cin*49+2*7+j] + input_partition[cin*49+4*7+j];
-
 			BTx[cin * 28 + 3 * 7 + j] = input_partition[cin*49+2*7+j] - input_partition[cin*49+6*7+j];
 		}
 	}
@@ -93,8 +73,8 @@ float* wino23s1d2_ATMA_cpu(float* M,int Cout,float* ATM){
 	// (3x4),(4x4) -> (3,4)
 	for (int cout = 0; cout < Cout; ++cout){
 		for (int j = 0; j < 4; j++) {
-			ATM[cout*12+0*4+j] = M[cout*16+j*4+0]+M[cout*16+j*4+1]+M[cout*16+j*4+2];
-			ATM[cout*12+2*4+j] = M[cout*16+j*4+1]-M[cout*16+j*4+2]-M[cout*16+j*4+3];
+			ATM[cout*12+0*4+j] = M[cout*16+0*4+j]+M[cout*16+1*4+j]+M[cout*16+2*4+j];
+			ATM[cout*12+2*4+j] = M[cout*16+1*4+j]-M[cout*16+2*4+j]-M[cout*16+3*4+j];
 
 		}
 	}
@@ -108,33 +88,6 @@ float* wino23s1d2_ATMA_cpu(float* M,int Cout,float* ATM){
 	}
 	return ATMA;
 }
-
-float* elementwise_mm_NHWC_ver_cpu(float* U, float* V, int Cout, int Cin) {
-	float* UT = NCHW_2_NHWC(U,Cout,Cin,4,4);
-	float* VT = NCHW_2_NHWC(V,1,Cin,4,4);
-
-	float accum;
-	float* M = (float*)malloc(sizeof(float) * Cout * 4 * 4);
-	// TODO: parallize element wise multiplication
-	for (int cout = 0; cout < Cout; ++cout) {
-		for (int h = 0; h < 4; ++h) {
-			for (int w = 0; w < 4; ++w) {
-				accum = 0.0f;
-				// TODO: maybe HWC instead of CHW? or change algorithm?
-				for (int cin = 0; cin < Cin; ++cin) {
-					accum += UT[find_CCHW_idx(cout,h,w,cin,Cout,4,4,Cin)] * VT[find_CCHW_idx(0, h, w, cin, 1, 4, 4, Cin)];
-				}
-				M[cout * 16 + h * 4 + w] = accum;
-			}
-		}
-	}
-	free_(U);
-	free_(V);
-	free_(UT);
-	free(VT);
-	return M;
-}
-
 
 float* elementwise_mm_cpu(float* U,float* V,int Cout,int Cin){
 	float accum;
@@ -191,54 +144,15 @@ float* tile_wino23s1d2_cpu(float* tile_group,struct kernel_ kernel,int Hout,int 
 			}
 		}
 
-		
-		
-		// struct timespec start, stop;
-		// double time;
+		struct timespec start, stop;
+		double time;
 
-		//print_CHW(input_partition,Cin,7,7);
 		//perform winograd: stride=1, dilation=2, F(2x2,3x3)
-
-		// if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}
 		float* U = wino23s1d2_GgGT_cpu(kernel,Gg);
-		// if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
-		// time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
-		// printf("GgGT time is %.f ns\n", time*1e9);
-
-		//printf("U:\n");
-		//print_CHW(U, Cout * Cin, 4, 4);
-
-
-		// if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}
 		float* V = wino23s1d2_BTxB_cpu(input_partition,Cin,BTx);
-		// if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
-		// time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
-		// printf("BTxB time is %.f ns\n", time*1e9);
-		// printf("V:\n");
-		// print_CHW(BTx, Cin, 4, 7);
-		//print_CHW(V,Cin, 4, 4);
-
-		// if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}
 		float* M = elementwise_mm_cpu(U,V,Cout,Cin);
-		// if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
-		// time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
-		// printf("MM time is %.f ns\n", time*1e9);
-
-		// NHWC is Slower because of transpose here
-		//float* M = elementwise_mm_NHWC_ver_cpu(U, V, Cout, Cin);
-		//printf("M:\n");
-		//print_CHW(M, Cout, 4, 4);
-
-		// if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}
 		float* tile_partition = wino23s1d2_ATMA_cpu(M,Cout,ATM);
-		// if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
-		// time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
-		// printf("ATMA time is %.f ns\n", time*1e9);
-		
-		//printf("tile:\n");
-		//print_CHW(tile_partition, Cout, 3, 3);
-		
-		// TODO: parallel merge
+
 		 //Merge into single output
 		for (int cout = 0; cout < Cout; ++cout){
 			if (tile_idx == 0){
