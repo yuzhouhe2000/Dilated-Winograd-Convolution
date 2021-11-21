@@ -151,8 +151,8 @@ int main(void){
 	int N = 4;
 	int Hin = 32;
 	int Win = 32;
-	int Cin = 16;
-	int Cout = 16;
+	int Cin = 64;
+	int Cout = 64;
 	int Hk = 3;
 	int Wk = 3;
 	int dilH = 2;

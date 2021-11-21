@@ -5,72 +5,55 @@
 #include "winograd_transform.h"
 #include <omp.h>
 
-// Define winograd transformation matrix.
-const float wino23s1d2_BT[4][7] = {{1.0f,0.0f,0.0f,0.0f,-1.0f,0.0f,0.0f},
-								   {0.0f,0.0f,1.0f,0.0f,1.0f,0.0f,0.0f},
-								   {0.0f,0.0f,-1.0f,0.0f,1.0f,0.0f,0.0f},
-								   {0.0f,0.0f,1.0f,0.0f,0.0f,0.0f,-1.0f} };
+// Winograd transformation matrix.
+// const float wino23s1d2_BT[4][7] = {{1.0f,0.0f,0.0f,0.0f,-1.0f,0.0f,0.0f},
+// 								   {0.0f,0.0f,1.0f,0.0f,1.0f,0.0f,0.0f},
+// 								   {0.0f,0.0f,-1.0f,0.0f,1.0f,0.0f,0.0f},
+// 								   {0.0f,0.0f,1.0f,0.0f,0.0f,0.0f,-1.0f} };
 
-const float wino23s1d2_G[4][5] = { {1.0f,0.0f,0.0f,0.0f,0.0f},
-								 {1.0f / 2,0.0f,1.0f / 2,0.0f,1.0f / 2},
-								 {1.0f / 2,0.0f,-1.0f / 2,0.0f,1.0f / 2},
-								 {0.0f,0.0f,0.0f,0.0f,1.0f} };
+// const float wino23s1d2_G[4][5] = { {1.0f,0.0f,0.0f,0.0f,0.0f},
+// 								 {1.0f / 2,0.0f,1.0f / 2,0.0f,1.0f / 2},
+// 								 {1.0f / 2,0.0f,-1.0f / 2,0.0f,1.0f / 2},
+// 								 {0.0f,0.0f,0.0f,0.0f,1.0f} };
 
-const float wino23s1d2_AT[3][4] = { {1.0f,1.0f,1.0f,0.0f},
-								   {0.0f,0.0f,0.0f,0.0f},
-								   {0.0f,1.0f,-1.0f,-1.0f} };
+// const float wino23s1d2_AT[3][4] = { {1.0f,1.0f,1.0f,0.0f},
+// 								   {0.0f,0.0f,0.0f,0.0f},
+// 								   {0.0f,1.0f,-1.0f,-1.0f} };
 
 
 // TODO: organize code
 float* wino23s1d2_GgGT_cpu(struct kernel_ kernel,float* Gg){
-	float accum;
 	int kernel_idx, Gg_idx;
-	// TODO: faster MM  
 	// (4x5),(5x5) -> (4,5)
+	// Sparse
+	float accum;
 	for (int cout = 0; cout < kernel.Cout; ++cout){
 		for (int cin = 0; cin < kernel.Cin; ++cin){
-			for (int i = 1; i < 3; ++i) {
-				for (int j = 0; j < 5; j=j+2) {
-					accum = 0.0f;
-					for (int k = 0; k < 5; k = k + 2) {
-						kernel_idx = find_kernel_idx(cout, cin, k, j, kernel);
-						accum += wino23s1d2_G[i][k] * kernel.data[kernel_idx];
-					}
-					Gg_idx = find_CCHW_idx(cout, cin, i, j, kernel.Cout, kernel.Cin, 4, 5);
-					Gg[Gg_idx] = accum;
-				}
-			}
-			// save computation from sparsity in row 0 and row 3
 			for (int j = 0; j < 5; j=j+2) {
-				Gg_idx = find_CCHW_idx(cout, cin, 0, j, kernel.Cout, kernel.Cin, 4, 5);
-				kernel_idx = find_kernel_idx(cout, cin, 0, j, kernel);
-				Gg[Gg_idx] = kernel.data[kernel_idx];
-				Gg_idx = find_CCHW_idx(cout, cin, 3, j, kernel.Cout, kernel.Cin, 4, 5);
-				kernel_idx = find_kernel_idx(cout, cin, 4, j, kernel);
-				Gg[Gg_idx] = kernel.data[kernel_idx];
+				Gg[cout*kernel.Cin*4*5+cin*4*5+0*5+j] = kernel.data[cout*kernel.Cin*5*5+cin*5*5+0*5+j];
+				Gg[cout*kernel.Cin*4*5+cin*4*5+1*5+j] = 0.5f*kernel.data[cout*kernel.Cin*5*5+cin*5*5+0*5+j]+
+														0.5f*kernel.data[cout*kernel.Cin*5*5+cin*5*5+2*5+j]+
+														0.5f*kernel.data[cout*kernel.Cin*5*5+cin*5*5+4*5+j];
+				Gg[cout*kernel.Cin*4*5+cin*4*5+2*5+j] = 0.5f*kernel.data[cout*kernel.Cin*5*5+cin*5*5+0*5+j]-
+														0.5f*kernel.data[cout*kernel.Cin*5*5+cin*5*5+2*5+j]+
+														0.5f*kernel.data[cout*kernel.Cin*5*5+cin*5*5+4*5+j];
+				Gg[cout*kernel.Cin*4*5+cin*4*5+3*5+j] = kernel.data[cout*kernel.Cin*5*5+cin*5*5+4*5+j];
 			}
-
 		}
 	}
-
-
 	float* GgGT = (float*)malloc(sizeof(float)*kernel.Cout*kernel.Cin*4*4);
 	// (4x5),(5x4) -> (4,4)
 	for (int cout = 0; cout < kernel.Cout; ++cout){
 		for (int cin = 0; cin < kernel.Cin; ++cin){
 			for (int i = 0; i < 4; ++i) {
-				for (int j = 0; j < 4; ++j) {
-					accum = 0.0f;
-					for (int k = 0; k < 5; k=k+2) {
-						Gg_idx = find_CCHW_idx(cout, cin, i, k, kernel.Cout, kernel.Cin, 4, 5);
-						accum += Gg[Gg_idx] * wino23s1d2_G[j][k];
-					}
-					GgGT[cout*kernel.Cin*16+cin*16+i*4+j] = accum;
-				}
-				Gg_idx = find_CCHW_idx(cout, cin, i, 0, kernel.Cout, kernel.Cin, 4, 5);
-				GgGT[cout*kernel.Cin*16+cin*16+i*4+0] = Gg[Gg_idx];
-				Gg_idx = find_CCHW_idx(cout, cin, i, 4, kernel.Cout, kernel.Cin, 4, 5);
-				GgGT[cout*kernel.Cin*16+cin*16+i*4+3] = Gg[Gg_idx];
+				GgGT[cout*kernel.Cin*4*4+cin*4*4+i*4+0] = Gg[cout*kernel.Cin*4*5+cin*4*5+i*5+0];
+				GgGT[cout*kernel.Cin*4*4+cin*4*4+i*4+1] = 0.5f*Gg[cout*kernel.Cin*4*5+cin*4*5+i*5+0]+
+														0.5f*Gg[cout*kernel.Cin*4*5+cin*4*5+i*5+2]+
+														0.5f*Gg[cout*kernel.Cin*4*5+cin*4*5+i*5+4];
+				GgGT[cout*kernel.Cin*4*4+cin*4*4+i*4+2] = 0.5f*Gg[cout*kernel.Cin*4*5+cin*4*5+i*5+0]-
+														0.5f*Gg[cout*kernel.Cin*4*5+cin*4*5+i*5+2]+
+														0.5f*Gg[cout*kernel.Cin*4*5+cin*4*5+i*5+4];
+				GgGT[cout*kernel.Cin*4*4+cin*4*4+i*4+3] = Gg[cout*kernel.Cin*4*5+cin*4*5+i*5+4];
 			}
 		}
 	}
@@ -79,36 +62,51 @@ float* wino23s1d2_GgGT_cpu(struct kernel_ kernel,float* Gg){
 
 float* wino23s1d2_BTxB_cpu(float* input_partition,int Cin,float* BTx){
 	float accum;
-	
-	// TODO: faster MM  
-	// (4x7),(7x7) -> (4,7)
+	// Sparse
 	for (int cin = 0; cin < Cin; ++cin){
-		for (int i = 0; i < 4; ++i) {
-			for (int j = 0; j < 7; j=j+2) {
-				accum = 0.0f;
-				for (int k = 0; k < 7; k=k+2) {
-					accum += wino23s1d2_BT[i][k] * input_partition[cin*49+k*7+j];
-				}
-				BTx[cin *28 + i * 7 + j] = accum;
-			}
-			
+		for (int j = 0; j < 7; j=j+2) {
+			// when k = 0,2,4,6
+			BTx[cin * 28 + 0 * 7 + j] = input_partition[cin*49+0*7+j] - input_partition[cin*49+4*7+j];
+
+			BTx[cin * 28 + 1 * 7 + j] = input_partition[cin*49+2*7+j] + input_partition[cin*49+4*7+j];
+
+			BTx[cin * 28 + 2 * 7 + j] = - input_partition[cin*49+2*7+j] + input_partition[cin*49+4*7+j];
+
+			BTx[cin * 28 + 3 * 7 + j] = input_partition[cin*49+2*7+j] - input_partition[cin*49+6*7+j];
 		}
 	}
-
 	float* BTxB = (float*)malloc(sizeof(float)*Cin*4*4);
 	// (4x7),(7x4) -> (4,4)
 	for (int cin = 0; cin < Cin; ++cin){
 		for (int i = 0; i < 4; ++i) {
-			for (int j = 0; j < 4; ++j) {
-				accum = 0.0f;
-				for (int k = 0; k < 7; k=k+2) {
-					accum += BTx[cin * 28 + i * 7 + k] * wino23s1d2_BT[j][k];
-				}
-				BTxB[cin*16+i*4+j] = accum;
-			}
+			BTxB[cin * 16 + i * 4 + 0] = BTx[cin*28+i*7+0] - BTx[cin*28+i*7+4];
+			BTxB[cin * 16 + i * 4 + 1] = BTx[cin*28+i*7+2] + BTx[cin*28+i*7+4];
+			BTxB[cin * 16 + i * 4 + 2] = - BTx[cin*28+i*7+2] + BTx[cin*28+i*7+4];
+			BTxB[cin * 16 + i * 4 + 3] = BTx[cin*28+i*7+2] - BTx[cin*28+i*7+6];
 		}
 	}
 	return BTxB;
+}
+
+
+float* wino23s1d2_ATMA_cpu(float* M,int Cout,float* ATM){
+	// (3x4),(4x4) -> (3,4)
+	for (int cout = 0; cout < Cout; ++cout){
+		for (int j = 0; j < 4; j++) {
+			ATM[cout*12+0*4+j] = M[cout*16+j*4+0]+M[cout*16+j*4+1]+M[cout*16+j*4+2];
+			ATM[cout*12+2*4+j] = M[cout*16+j*4+1]-M[cout*16+j*4+2]-M[cout*16+j*4+3];
+
+		}
+	}
+	float* ATMA = (float*)malloc(sizeof(float)*Cout*3*3);
+	// (3x4),(4x3) -> (3,2)
+	for (int cout = 0; cout < Cout; ++cout){
+		for (int i = 0; i < 3; i=i+2) {
+			ATMA[cout * 9 + i * 3 + 0] = ATM[cout*12+i*4+0]+ATM[cout*12+i*4+1]+ATM[cout*12+i*4+2];
+			ATMA[cout * 9 + i * 3 + 2] = ATM[cout*12+i*4+1]-ATM[cout*12+i*4+2]-ATM[cout*12+i*4+3];
+		}
+	}
+	return ATMA;
 }
 
 float* elementwise_mm_NHWC_ver_cpu(float* U, float* V, int Cout, int Cin) {
@@ -157,39 +155,6 @@ float* elementwise_mm_cpu(float* U,float* V,int Cout,int Cin){
 	free_(U);
 	free_(V);
 	return M;
-}
-
-float* wino23s1d2_ATMA_cpu(float* M,int Cout,float* ATM){
-	float accum;
-	
-	// TODO: faster MM  
-	// (3x4),(4x4) -> (3,4)
-	for (int cout = 0; cout < Cout; ++cout){
-		for (int i = 0; i < 3; i=i+2) {
-			for (int j = 0; j < 4; ++j) {
-				accum = 0.0f;
-				for (int k = 0; k < 4; ++k) {
-					accum += wino23s1d2_AT[i][k] * M[cout*16+k*4+j];
-				}
-				ATM[cout*12+i*4+j] = accum;
-			}
-		}
-	}
-	
-	float* ATMA = (float*)malloc(sizeof(float)*Cout*3*3);
-	// (3x4),(4x3) -> (3,3)
-	for (int cout = 0; cout < Cout; ++cout){
-		for (int i = 0; i < 3; i = i+2) {
-			for (int j = 0; j < 3; j =j+2) {
-				accum = 0.0f;
-				for (int k = 0; k < 4; ++k) {
-					accum += ATM[cout*12+i*4+k] * wino23s1d2_AT[j][k];
-				}
-				ATMA[cout*9+i*3+j] = accum;
-			}
-		}
-	}
-	return ATMA;
 }
 
 float* tile_wino23s1d2_cpu(float* tile_group,struct kernel_ kernel,int Hout,int Wout){
@@ -249,8 +214,8 @@ float* tile_wino23s1d2_cpu(float* tile_group,struct kernel_ kernel,int Hout,int 
 		// if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
 		// time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
 		// printf("BTxB time is %.f ns\n", time*1e9);
-		//printf("V:\n");
-		//print_CHW(BTx, Cin, 4, 7);
+		// printf("V:\n");
+		// print_CHW(BTx, Cin, 4, 7);
 		//print_CHW(V,Cin, 4, 4);
 
 		// if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}

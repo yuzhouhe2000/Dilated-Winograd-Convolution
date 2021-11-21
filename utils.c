@@ -12,9 +12,9 @@ void free_(float* ptr){
 	}
 }
 
-void fill(float* input,int SIZE){
+void fill(float* input,int SIZE,float value){
 	for(int i = 0;i<SIZE;i++){
-		input[i] = 0.0f;
+		input[i] = value;
 	}
 }
 

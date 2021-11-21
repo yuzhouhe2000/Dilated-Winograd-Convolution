@@ -14,7 +14,7 @@ struct kernel_
     int SIZE;
 } ;
 
-void fill(float* input,int SIZE);
+void fill(float* input,int SIZE,float value);
 void free_(float* ptr);
 void print_kernel(struct kernel_ kernel);
 void print_tensor(struct tensor_ output);
