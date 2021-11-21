@@ -229,7 +229,7 @@ struct tensor_ tensor_pad(struct tensor_ input,int padH,int padW){
 		}
 	}
 	struct tensor_ padded = { .data = output, .H = newH, .W = newW, .N = input.N, .C = input.C,.SIZE = newH*newW*input.N*input.C};
-	print_tensor(padded);
+	// print_tensor(padded);
 	return padded;
 } 
 

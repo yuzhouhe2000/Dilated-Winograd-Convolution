@@ -7,10 +7,11 @@
 
 // GgGT is bottleneck when Cout and Cin is large
 float* wino23s1d2_GgGT_cpu(struct kernel_ kernel,float* Gg){
-	int kernel_idx, Gg_idx;
 	// (4x5),(5x5) -> (4,5)
 	// Sparse
-	for (int cout = 0; cout < kernel.Cout; ++cout){
+	int cout;
+	#pragma omp parallel for
+	for (cout = 0; cout < kernel.Cout; ++cout){
 		for (int cin = 0; cin < kernel.Cin; ++cin){
 			for (int j = 0; j < 5; j=j+2) {
 				Gg[cout*kernel.Cin*4*5+cin*4*5+0*5+j] = kernel.data[cout*kernel.Cin*5*5+cin*5*5+0*5+j];
@@ -24,9 +25,11 @@ float* wino23s1d2_GgGT_cpu(struct kernel_ kernel,float* Gg){
 			}
 		}
 	}
+
 	float* GgGT = (float*)malloc(sizeof(float)*kernel.Cout*kernel.Cin*4*4);
 	// (4x5),(5x4) -> (4,4)
-	for (int cout = 0; cout < kernel.Cout; ++cout){
+	#pragma omp parallel for
+	for (cout = 0; cout < kernel.Cout; ++cout){
 		for (int cin = 0; cin < kernel.Cin; ++cin){
 			for (int i = 0; i < 4; ++i) {
 				GgGT[cout*kernel.Cin*4*4+cin*4*4+i*4+0] = Gg[cout*kernel.Cin*4*5+cin*4*5+i*5+0];
@@ -105,18 +108,18 @@ float* elementwise_mm_cpu(float* U,float* V,int Cout,int Cin){
 			}
 		}
 	}
-	free_(U);
+	// free_(U);
 	free_(V);
 	return M;
 }
 
-float* tile_wino23s1d2_cpu(float* tile_group,struct kernel_ kernel,int Hout,int Wout){
+float* tile_wino23s1d2_cpu(float* tile_group,struct kernel_ kernel,int Hout,int Wout,float* U){
 	int Cout = kernel.Cout;
 	int Cin = kernel.Cin;
 	float* merged_tile = (float*)malloc(sizeof(float)*Cout*4*4);
 	//print_CHW(tile_group, kernel.Cin,8,8);
 	float* input_partition = (float*)malloc(sizeof(float) * Cin * 7 * 7);
-	float* Gg = (float*)malloc(sizeof(float) * (kernel.Cout * kernel.Cin * 4 * 5));
+	
 	float* BTx = (float*)malloc(sizeof(float) * Cin * 4 * 7);
 	float* ATM = (float*)malloc(sizeof(float) * Cout * 3 * 4);
 
@@ -148,7 +151,8 @@ float* tile_wino23s1d2_cpu(float* tile_group,struct kernel_ kernel,int Hout,int 
 		double time;
 
 		//perform winograd: stride=1, dilation=2, F(2x2,3x3)
-		float* U = wino23s1d2_GgGT_cpu(kernel,Gg);
+		// float* Gg = (float*)malloc(sizeof(float) * (kernel.Cout * kernel.Cin * 4 * 5));
+		// float* U = wino23s1d2_GgGT_cpu(kernel,Gg);
 		float* V = wino23s1d2_BTxB_cpu(input_partition,Cin,BTx);
 		float* M = elementwise_mm_cpu(U,V,Cout,Cin);
 		float* tile_partition = wino23s1d2_ATMA_cpu(M,Cout,ATM);
@@ -184,7 +188,6 @@ float* tile_wino23s1d2_cpu(float* tile_group,struct kernel_ kernel,int Hout,int 
 		free_(tile_partition);
 	}
 	
-	free_(Gg);
 	free_(BTx);
 	free_(ATM);
 	free_(input_partition);

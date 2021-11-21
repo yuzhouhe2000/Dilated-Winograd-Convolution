@@ -95,6 +95,10 @@ struct tensor_ conv2d_dilated_winograd23s1d2_cpu1(struct tensor_ input_raw, stru
 	struct kernel_ dilated_kernel = kernel_simple_dilation(kernel);
 	// For each batch
 	int n;
+	float* Gg = (float*)malloc(sizeof(float) * (kernel.Cout * kernel.Cin * 4 * 5));
+	float* U = wino23s1d2_GgGT_cpu(dilated_kernel,Gg);
+	free_(Gg);
+
 	#pragma omp parallel for
 	for (n = 0; n < input.N;n++){
 		float* A_n = slice(input.data,n* input.H * input.W * input.C, (n+1) * input.H * input.W * input.C);
@@ -115,10 +119,11 @@ struct tensor_ conv2d_dilated_winograd23s1d2_cpu1(struct tensor_ input_raw, stru
 						}
 					}
 				}
+
 				//print_CHW(tile_group, kernel.Cin, 8, 8);
 				// winograd on tile
 				// output matrix size = 4x4, input matrix size = 8x8, kernel size = 5x5
-				float* tile_output = tile_wino23s1d2_cpu(tile_group,dilated_kernel,Hout,Wout);
+				float* tile_output = tile_wino23s1d2_cpu(tile_group,dilated_kernel,Hout,Wout,U);
 				free_(tile_group);
 				// memcpy tile result to output matrix C
 				for (int cout = 0; cout < kernel.Cout; cout++){		
@@ -137,6 +142,7 @@ struct tensor_ conv2d_dilated_winograd23s1d2_cpu1(struct tensor_ input_raw, stru
 		}	
 		free_(A_n);
 	}	
+	free_(U);
 	struct tensor_ output = { .data = C, .H = Hout, .W = Wout, .N = input.N, .C = kernel.Cout,.SIZE = Hout*Wout*input.N*kernel.Cout};
 	return output;
 }
@@ -164,10 +170,10 @@ int main(void){
 	struct kernel_ kernel = { .data = B, .Cout = Cout, .Cin = Cin, .H = Hk, .W = Wk, .dilH = dilH, .dilW = dilW, .padH = padH, .padW = padW, .strideH = strideH, .strideW = strideW,.SIZE = Cout * Hk * Wk* Cin};
 
 	for (int i = 0; i <input.SIZE; i++) {
-		input.data[i] = i;
+		input.data[i] = 2;
 	}
 	for (int i = 0; i < kernel.SIZE; i++) {
-		kernel.data[i] = i;
+		kernel.data[i] = 2;
 	}
 
 	printf("N = %d\n",N);

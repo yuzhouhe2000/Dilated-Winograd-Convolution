@@ -69,8 +69,6 @@ __global__ void conv2d_direct_convolution_gpu(struct tensor_ input, struct kerne
 }
 
 
-
-
 int main(){		
 	int N = 4;
 	int Hin = 128;
