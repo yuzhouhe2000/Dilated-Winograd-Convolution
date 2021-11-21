@@ -7,14 +7,17 @@ To run CPU version:
     make all
     ./conv2d_cpu
 
+To run GPU version:
+
+    make all
+    sbatch job.sl
+
 TODO:
 
-- [ ] CUDA accelerated direct convolution
+- [ ] CUDA accelerated dilated winograd (priority)
 - [ ] CUDA accelerated im2col
-- [ ] CUDA accelerated dilated winograd
 - [ ] CuDNN baseline
 - [ ] More Winograd kernel shapes, dilation rates and stride
-
 
 DONE:
 
@@ -22,3 +25,4 @@ DONE:
 - [x] CPU direct convolution
 - [x] CPU im2col
 - [x] CPU dilated winograd
+- [x] CUDA accelerated direct convolution
