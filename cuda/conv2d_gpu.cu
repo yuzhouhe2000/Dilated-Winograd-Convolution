@@ -70,65 +70,6 @@ __global__ void conv2d_direct_convolution_gpu(struct tensor_ input, struct kerne
 
 
 
-struct tensor_ conv2d_dilated_winograd23s1d2_cpu1(struct tensor_ input_raw, struct kernel_ kernel){
-	// TODO: use better way to pad
-	struct tensor_ input = tensor_pad(input_raw, kernel.padH, kernel.padW);
-	kernel.padH = 0;
-	kernel.padW = 0;
-	int Hout = ((input.H + 2*kernel.padH - kernel.dilH * (kernel.H - 1) - 1)/kernel.strideH) + 1;
-	int Wout = ((input.W + 2*kernel.padW - kernel.dilW * (kernel.W - 1) - 1)/kernel.strideW) + 1;
-	float* C = (float*)malloc(sizeof(float) * input.N * Hout * Wout * kernel.Cout);
-	// 3x3 kernel dilation -> 5x5
-	struct kernel_ dilated_kernel = kernel_simple_dilation(kernel);
-	// For each batch
-	int n;
-	#pragma omp parallel for
-	for (n = 0; n < input.N;n++){
-		float* A_n = slice(input.data,n* input.H * input.W * input.C, (n+1) * input.H * input.W * input.C);
-		// For each tile group (4 tiles)
-		// Overlap = 4		
-		for (int hin = 0; hin < input.H-7; hin=hin+4){
-			for (int win = 0; win < input.W-7; win=win+4){
-				// Initialize tile group (4 tiles)
-				// TODO: maybe NHWC better? Transpose?
-				float* tile_group = (float*)malloc(sizeof(float) * input.C * 8*8);
-				for (int cin = 0; cin < input.C; cin++){		
-					for (int yy = 0; yy < 8; yy++){
-						for (int xx = 0; xx < 8; xx++){
-							int posH = hin+yy;
-							int posW = win+xx;
-							int A_n_idx = cin*input.H*input.W+posH*input.W+posW;
-							tile_group[cin*64+yy*8+xx] = A_n[A_n_idx];
-						}
-					}
-				}
-				//print_CHW(tile_group, kernel.Cin, 8, 8);
-				// winograd on tile
-				// output matrix size = 4x4, input matrix size = 8x8, kernel size = 5x5
-				float* tile_output = tile_wino23s1d2_cpu(tile_group,dilated_kernel,Hout,Wout);
-				free_(tile_group);
-				// memcpy tile result to output matrix C
-				for (int cout = 0; cout < kernel.Cout; cout++){		
-					for (int yy = 0; yy < 4; yy++){
-						for (int xx = 0; xx < 4; xx++){
-							int posH = hin+yy;
-							int posW = win+xx;
-							int tile_idx = cout * 16 + yy * 4 + xx;
-							int C_idx = find_NCHW_idx(n, cout, posH, posW, input.N, kernel.Cout, Hout, Wout);
-							C[C_idx] = tile_output[tile_idx];
-						}
-					}
-				}
-				free_(tile_output);
-			}
-		}	
-		free_(A_n);
-	}	
-	struct tensor_ output = { .data = C, .H = Hout, .W = Wout, .N = input.N, .C = kernel.Cout,.SIZE = Hout*Wout*input.N*kernel.Cout};
-	return output;
-}
-
-
 
 int main(){		
 	int N = 4;
