@@ -61,16 +61,13 @@ struct tensor_ conv2d_im2col_GEMM_cpu(struct tensor_ input, struct kernel_ kerne
 		float* A_n = slice(input.data,n* input.H * input.W * input.C, (n+1) * input.H * input.W * input.C);
 		//print_CHW(A_n, input.C, input.H, input.W);
 		float* A_col_n = im2col_dilated_cpu(A_n, input.C, input.H, input.W, kernel.H, kernel.strideH, kernel.padH,kernel.dilH);
-		int dilate_ksize = (kernel.dilH - 1) * (kernel.H + 1) + kernel.W;
+		// int dilate_ksize = (kernel.dilH - 1) * (kernel.H + 1) + kernel.W;
 		int channels_col = input.C * kernel.H * kernel.W;
-		int x = kernel.Cout;
-		int y = channels_col;
-		int z = Hout*Wout;	
 		//print_CHW(A_col_n, channels_col, Hout,Wout);
-		float* temp = im2col_mm(kernel.data,A_col_n,x,y,z);
-		int batch = x*z;
-		memcpy(C+batch*n,temp,sizeof(float)*batch);
-		//print_W(C, batch);
+		float* temp = im2col_mm(kernel.data,A_col_n,kernel.Cout,input.C ,kernel.H,kernel.W,Hout*Wout);
+		int batch_size = kernel.Cout*Hout*Wout;
+		memcpy(C+batch_size*n,temp,sizeof(float)*batch_size);
+		//print_W(C, batch_size);
 		free_(A_n);
 		free_(A_col_n);
 		free_(temp);
@@ -149,10 +146,10 @@ struct tensor_ conv2d_dilated_winograd23s1d2_cpu1(struct tensor_ input_raw, stru
 int main(void){		
 	omp_set_num_threads(4);
 	int N = 4;
-	int Hin = 64;
-	int Win = 64;
-	int Cin = 32;
-	int Cout = 32;
+	int Hin = 128;
+	int Win = 128;
+	int Cin = 16;
+	int Cout = 16;
 	int Hk = 3;
 	int Wk = 3;
 	int dilH = 2;

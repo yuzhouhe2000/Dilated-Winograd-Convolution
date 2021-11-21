@@ -122,7 +122,7 @@ float* tile_wino23s1d2_cpu(float* tile_group,struct kernel_ kernel,int Hout,int 
 
 	/*omp_set_num_threads(4); */
 	int tile_idx;
-	#pragma omp parallel for
+	// #pragma omp parallel for
 	for(tile_idx = 0;tile_idx<4;++tile_idx){
 		// TODO: parallel partition
 		// Divide into four partitions

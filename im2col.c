@@ -18,7 +18,6 @@ float im2col_get_pixel(float *im, int height, int width, int channels,int row, i
     return im[col + width*(row + height*channel)];
 }
 
-// TODO: dilation is not working properly. Need to manually dilate kernel for im2col. Need to fix later.
 float* im2col_dilated_cpu(float* data_im,int channels,  int height,  int width,int ksize,  int stride, int pad, int dilate_rate) {
     int c,h,w;
     int dilate_ksize = (dilate_rate - 1) * (ksize + 1) + ksize;
@@ -97,31 +96,23 @@ float* col2im_dilated_cpu(float* data_col,
 }
 
 
-float* im2col_mm(float* A, float* B,int X,int Y, int Z){
+float* im2col_mm(float* A, float* B,int X,int Cin ,int Hk,int Wk, int Z){
     float* C = (float*)malloc(sizeof(float) * X * Z);
-
-    // Transpose first (column majors)
-    float* BT = transpose(B,1,1,Y,Z);
+    int Y = Cin*Hk*Wk;
     int x;
-    #pragma omp parallel for
+    // #pragma omp parallel for
     for (x = 0; x < X; x++) {
         for (int z = 0; z < Z; z++) {
             C[x * Z + z] = 0.0f;
-            for (int y = 0; y < Y; y++) {
-                C[x * Z + z] += A[x * Y + y] * BT[z * Y + y];
+            for (int cin = 0; cin < Cin; cin++) {
+                for (int hk = 0; hk < Hk; hk=hk+2) {
+                    for (int wk = 0; wk < Wk; wk=wk+2) {
+                        int y = cin*Hk*Wk + hk*Wk+wk;
+                        C[x * Z + z] += A[x * Y + y] * B[y * Z + z];
+                    }
+                }
             }
         }
     }
- //   int x;
- //   #pragma omp parallel for
- //   for (x=0;x<X;x++){
-	//	for (int z=0;z<Z;z++){
- //           C[x*Z+z] = 0.0f;
-	//		for (int y=0;y<Y;y++){
-	//			C[x*Z+z]+=A[x*Y+y]*B[y*Z+z];
-	//		}
-	//	}
-	//}
-    free_(BT);
     return C;
 }
