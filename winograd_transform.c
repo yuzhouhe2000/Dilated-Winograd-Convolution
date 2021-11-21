@@ -5,7 +5,6 @@
 #include "winograd_transform.h"
 #include <omp.h>
 
-// GgGT is bottleneck when Cout and Cin is large
 float* wino23s1d2_GgGT_cpu(struct kernel_ kernel,float* Gg){
 	// (4x5),(5x5) -> (4,5)
 	// Sparse
