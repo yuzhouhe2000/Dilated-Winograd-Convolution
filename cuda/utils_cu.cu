@@ -3,7 +3,20 @@
 #include <string.h>
 #include "utils_cu.h"
 
-// Safe free
+// // Safe free
+float* cudaNew_(int size){
+	float *ptr =(float*)malloc(sizeof(float)*size);
+	float *ptr_cu;
+	cudaMalloc((void**)&ptr_cu,sizeof(float)*size);
+	cudaMemcpy(ptr_cu,ptr,sizeof(float)*size,cudaMemcpyHostToDevice);
+	cudaFree_(ptr);
+	return ptr_cu;
+}
+
+
+
+
+// Safe free host
 void cudaFree_(float* ptr){
 	if (ptr) {
 		cudaFree(ptr);
@@ -11,9 +24,6 @@ void cudaFree_(float* ptr){
 	}
 }
 
-
-	// cudaMalloc((void**)&gpu_c, sizeof(int)*n*n);
-	// cudaMemcpy(gpu_a, A, sizeof(int)*n*n, cudaMemcpyHostToDevice);
 
 
 // cuda data operation

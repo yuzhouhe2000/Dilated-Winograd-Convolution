@@ -96,7 +96,7 @@ float* col2im_dilated_cpu(float* data_col,
 }
 
 
-float* im2col_mm(float* A, float* B,int X,int Cin ,int Hk,int Wk, int Z){
+float* im2col_mm(float* A, float* B,int X,int Cin ,int Hk,int Wk, int Z, int dilH, int dilW){
     float* C = (float*)malloc(sizeof(float) * X * Z);
     int Y = Cin*Hk*Wk;
     int x;
@@ -105,8 +105,8 @@ float* im2col_mm(float* A, float* B,int X,int Cin ,int Hk,int Wk, int Z){
         for (int z = 0; z < Z; z++) {
             C[x * Z + z] = 0.0f;
             for (int cin = 0; cin < Cin; cin++) {
-                for (int hk = 0; hk < Hk; hk=hk+2) {
-                    for (int wk = 0; wk < Wk; wk=wk+2) {
+                for (int hk = 0; hk < Hk; hk=hk+dilH) {
+                    for (int wk = 0; wk < Wk; wk=wk+dilW) {
                         int y = cin*Hk*Wk + hk*Wk+wk;
                         C[x * Z + z] += A[x * Y + y] * B[y * Z + z];
                     }

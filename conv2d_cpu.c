@@ -23,8 +23,8 @@ struct tensor_ conv2d_direct_convolution_cpu(struct tensor_ input, struct kernel
 				for (int wout = 0; wout < Wout; wout++){
 					float accum = 0.0f;
 					for (int cin = 0; cin < input.C;cin++){
-						for (int hk = 0; hk < kernel.H;hk=hk+2){
-							for (int wk = 0; wk < kernel.W;wk=wk+2){	
+						for (int hk = 0; hk < kernel.H;hk=hk+kernel.dilH){
+							for (int wk = 0; wk < kernel.W;wk=wk+kernel.dilW){	
 								int hin = (hout * kernel.strideH + hk)-kernel.padH;
 								int win = (wout * kernel.strideW + wk)-kernel.padW;
 								if (hin < 0 || hin >= input.H || win < 0 || win >= input.W) {
@@ -64,7 +64,7 @@ struct tensor_ conv2d_im2col_GEMM_cpu(struct tensor_ input, struct kernel_ kerne
 		// int dilate_ksize = (kernel.dilH - 1) * (kernel.H + 1) + kernel.W;
 		int channels_col = input.C * kernel.H * kernel.W;
 		//print_CHW(A_col_n, channels_col, Hout,Wout);
-		float* temp = im2col_mm(kernel.data,A_col_n,kernel.Cout,input.C ,kernel.H,kernel.W,Hout*Wout);
+		float* temp = im2col_mm(kernel.data,A_col_n,kernel.Cout,input.C ,kernel.H,kernel.W,Hout*Wout,kernel.dilH,kernel.dilW);
 		int batch_size = kernel.Cout*Hout*Wout;
 		memcpy(C+batch_size*n,temp,sizeof(float)*batch_size);
 		//print_W(C, batch_size);
@@ -77,6 +77,11 @@ struct tensor_ conv2d_im2col_GEMM_cpu(struct tensor_ input, struct kernel_ kerne
 	return output;
 }
 
+
+// F(2,3) dilated convolution, dilation = 2, stride = 1. Tensor in NCHW layout.
+// Input matrix breaks into 8x8 tiles ((m+r-1)*2 = 8), each consist of four 7x7 sparse tiles (converted to 4x4 winograd input).
+// Output matrix breaks into 4x4 tiles, each consist of four 4x4 sparse tiles (converted to 2x2 winograd output).
+// Overlap by r-1 = 2, because dilation =2 -> overlap = 4
 
 // F(2,3) dilated convolution, dilation = 2, stride = 1. Tensor in NCHW layout.
 // Input matrix breaks into 8x8 tiles ((m+r-1)*2 = 8), each consist of four 7x7 sparse tiles (converted to 4x4 winograd input).
@@ -146,6 +151,7 @@ struct tensor_ conv2d_dilated_winograd23s1d2_cpu1(struct tensor_ input_raw, stru
 	struct tensor_ output = { .data = C, .H = Hout, .W = Wout, .N = input.N, .C = kernel.Cout,.SIZE = Hout*Wout*input.N*kernel.Cout};
 	return output;
 }
+
 
 
 

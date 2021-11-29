@@ -14,10 +14,11 @@ To run GPU version:
 
 TODO:
 
-- [ ] CUDA accelerated dilated winograd (priority)
-- [ ] CUDA accelerated im2col
+- [ ] improve CUDA accelerated winograd 
+- [ ] parameter vs. performance graph
+- [ ] project report
 - [ ] CuDNN baseline
-- [ ] More Winograd kernel shapes, dilation rates and stride
+
 
 DONE:
 
@@ -26,3 +27,4 @@ DONE:
 - [x] CPU im2col
 - [x] CPU dilated winograd
 - [x] CUDA accelerated direct convolution
+- [x] CUDA accelerated dilated winograd

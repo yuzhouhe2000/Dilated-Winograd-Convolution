@@ -14,7 +14,9 @@ struct kernel_
     int SIZE;
 } ;
 
+float* cudaNew_(int size);
 void free_(float* ptr);
+
 void print_kernel(struct kernel_ kernel);
 void print_tensor(struct tensor_ output);
 struct kernel_ kernel_simple_dilation(struct kernel_ kernel);
