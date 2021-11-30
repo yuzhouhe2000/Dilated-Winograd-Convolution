@@ -4,6 +4,7 @@
 #include <string.h>
 #include "utils_cu.h"
 
+
 // Golden Output. Naive implementation of direct convolution on CPU. Tensor in NCHW layout.
 struct tensor_ conv2d_direct_convolution_cpu(struct tensor_ input, struct kernel_ kernel_raw){
 	struct kernel_ kernel = kernel_simple_dilation(kernel_raw);
@@ -117,7 +118,6 @@ __global__ void wino23s1d2_BTxB_EWMM_ATMA_kernel(struct tensor_ input,struct ten
 	int p = blockIdx.x*blockDim.x + threadIdx.x;
 	int BATCH = ((input.N*output.C * ((input.H-dil*2)/(dil*2)) *((input.W-dil*2)/(dil*2)) * dil * dil))/(blockDim.x*gridDim.x);
 	int start_idx = p * BATCH;
-	float accum;
 
 	float dilated_input[16*4*4];
 	float BTx[16*4*4];
@@ -206,7 +206,7 @@ __global__ void wino23s1d2_BTxB_EWMM_ATMA_kernel(struct tensor_ input,struct ten
 
 
 int main(){		
-	int N = 4;
+	int N = 64;
 	// Hin needs to be multiple of 2*dilH
 	int Hin = 128;
 	int Win = 128;
@@ -223,8 +223,10 @@ int main(){
 	int strideH = 1;
 	int strideW = 1;
 
-	int p = 256*1;
-	int block_size = 256;
+	// int p = 4096;
+	// int block_size = 1024;
+	int p = 4096;
+	int block_size = 128;
 
 	printf("N = %d\n",N);
 	printf("Cout = %d\n",Cout);
@@ -242,8 +244,9 @@ int main(){
 	for (int i = 0; i < kernel.SIZE; i++) {
 		kernel.data[i] = 2;
 	}
-	// golden output from CPU
-	struct tensor_ golden = conv2d_direct_convolution_cpu(input,kernel);
+
+	// struct tensor_ golden = conv2d_direct_convolution_cpu(input,kernel);
+
 	// print_tensor(golden);
 	// preprocess input kernel and image
 	struct tensor_ input_pad = tensor_pad(input, kernel.padH, kernel.padW);
@@ -286,7 +289,7 @@ int main(){
 	// load data from device to cpu 
 	output = tensor2cpu(output_gpu);
 	// print_tensor(output);	
-	check_tensor(golden,output);
+	// check_tensor(golden,output);
 	printf("\n\n");
 
 
@@ -310,15 +313,16 @@ int main(){
 	time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
 	printf("Winograd GPU time is %f ns\n", time*1e9);
 	// print_tensor(output2);
-	check_tensor(golden,output2);
+	
+	// check_tensor(golden,output2);
 
-
-	// // free pointers
-	// free_(kernel.data);
-	// // free(input.data);
-	// // cudaFree_(input_gpu.data);
-	// // cudaFree_(kernel.data);
-	// free_(output.data);
+	// free pointers
+	cudaFree_(kernel.data);
+	cudaFree_(input_gpu.data);
+	cudaFree_(kernel.data);
+	// free_(golden.data);
+	free_(output.data);
+	free_(output2.data);
 	return 0;
 }	
 
