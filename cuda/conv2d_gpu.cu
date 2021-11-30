@@ -45,29 +45,35 @@ struct tensor_ conv2d_direct_convolution_cpu(struct tensor_ input, struct kernel
 // Naive implementation of direct convolution on CPU. Tensor in NCHW layout.
 __global__ void conv2d_direct_convolution_gpu(struct tensor_ input, struct kernel_ kernel, struct tensor_ output){
 	// Distribute computation of each output pixel to a separate cuda kernel
-	int idx = blockIdx.x*blockDim.x + threadIdx.x;
-	int n = idx/(kernel.Cout * output.H * output.W);
-	int cout = ((idx% (kernel.Cout * output.H * output.W))/(output.H * output.W)) ;
-	int hout = ((idx% (output.H*output.W))/(output.W)) ;
-	int wout = idx%(output.W);
-
-	// TODO: use shared memory
-	float accum = 0.0f;
-	for (int cin = 0; cin < input.C;cin++){
-		for (int hk = 0; hk < kernel.H;hk++){
-			for (int wk = 0; wk < kernel.W;wk++){	
-				int hin = (hout * kernel.strideH + hk*kernel.dilH)-kernel.padH;
-				int win = (wout * kernel.strideW + wk*kernel.dilW)-kernel.padW;
-				int input_idx = n * input.H * input.W * input.C + cin*input.W*input.H + hin * input.W  + win;
-				int kernel_idx = cout * kernel.Cin * kernel.H * kernel.W + cin * kernel.H * kernel.W + hk * kernel.W + wk;
-				accum += (input.data[input_idx] * kernel.data[kernel_idx]);	
-				
+	int p = blockIdx.x*blockDim.x + threadIdx.x;
+	int BATCH = (output.SIZE/(blockDim.x*gridDim.x));
+	int start_idx = p * BATCH;
+	for (int batch = 0; batch < BATCH;batch++){
+		int idx = start_idx + batch;
+		int n = idx/(kernel.Cout * output.H * output.W);
+		int cout = ((idx% (kernel.Cout * output.H * output.W))/(output.H * output.W)) ;
+		int hout = ((idx% (output.H*output.W))/(output.W)) ;
+		int wout = idx%(output.W);
+		// TODO: use shared memory
+		float accum = 0.0f;
+		for (int cin = 0; cin < input.C;cin++){
+			for (int hk = 0; hk < kernel.H;hk++){
+				for (int wk = 0; wk < kernel.W;wk++){	
+					int hin = (hout * kernel.strideH + hk*kernel.dilH)-kernel.padH;
+					int win = (wout * kernel.strideW + wk*kernel.dilW)-kernel.padW;
+					int input_idx = n * input.H * input.W * input.C + cin*input.W*input.H + hin * input.W  + win;
+					int kernel_idx = cout * kernel.Cin * kernel.H * kernel.W + cin * kernel.H * kernel.W + hk * kernel.W + wk;
+					accum += (input.data[input_idx] * kernel.data[kernel_idx]);	
+					
+				}
 			}
 		}
+		output.data[n * kernel.Cout * output.H * output.W + cout*output.H*output.W +  hout * output.W + wout] = accum;
 	}
-	output.data[n * kernel.Cout * output.H * output.W + cout*output.H*output.W +  hout * output.W + wout] = accum;
 }
 
+
+// I didn't parallelize this because offline inference doesn't need to consider GgGT computation time.
 __global__ void wino23s1d2_GgGT_kernel(struct kernel_ kernel,float* Gg,float* GgGT){
 	// (4x3),(3x3) -> (4,3)
 	// Sparse
@@ -104,132 +110,128 @@ __global__ void wino23s1d2_GgGT_kernel(struct kernel_ kernel,float* Gg,float* Gg
 }
 
 __global__ void wino23s1d2_BTxB_EWMM_ATMA_kernel(struct tensor_ input,struct tensor_ output,float* U,int dil){
-	// Assume only 1 CUDA kernel,dilation = 2
-	// TODO: extend to dilation = 4
 	
 	// Distribute computation of each output pixel to a separate cuda kernel
 	// Original structure:
 
-	// for (int n = 0; n < input.N;n++){
-	// 	// for each cout
-	// 	for (int cout = 0; cout <output.C; cout++){
-	// 		// for each tile
-	// 		for (int h = 0; h < input.H-dil*2;h=h+dil*2){
-	// 			for (int w = 0; w < input.W-dil*2;w=w+dil*2){
-	// 				for (int hh = 0; hh < dil; hh++){
-	// 					for (int ww = 0; ww < dil; ww++){
-	// 						// define tiles
-
-	int idx = blockIdx.x*blockDim.x + threadIdx.x;
-	int n = idx/(output.C * ((input.H-dil*2)/(dil*2)) *((input.W-dil*2)/(dil*2)) * dil * dil);
-	int cout = (idx%(output.C*((input.H-dil*2)/(dil*2))*((input.W-dil*2)/(dil*2))*dil*dil))/(((input.H-dil*2)/(dil*2))*((input.W-dil*2)/(dil*2))*dil*dil);
-	int h = (idx%(((input.H-dil*2)/(dil*2))*((input.W-dil*2)/(dil*2))*dil*dil))/(((input.W-dil*2)/(dil*2))*dil*dil)*(dil*2);
-	int w = ((idx%(((input.W-dil*2)/(dil*2))*dil*dil))/(dil*dil))*(dil*2);
-	int hh = (idx%(dil*dil))/(dil);
-	int ww = idx%dil;
-
-	// // parallel
+	int p = blockIdx.x*blockDim.x + threadIdx.x;
+	int BATCH = ((input.N*output.C * ((input.H-dil*2)/(dil*2)) *((input.W-dil*2)/(dil*2)) * dil * dil))/(blockDim.x*gridDim.x);
+	int start_idx = p * BATCH;
 	float accum;
-	float* dilated_input = (float*)malloc(sizeof(float)*input.C*4*4);
-	float* BTx = (float*)malloc(sizeof(float)*input.C*4*4);
-	float* V = (float*)malloc(sizeof(float)*input.C*4*4);
-	float* M = (float*)malloc(sizeof(float)*4*4);
-	float* ATM = (float*)malloc(sizeof(float)*4*4);
-	float* ATMA = (float*)malloc(sizeof(float)*4*4);
-	// channels of the tile
-	for (int cin = 0; cin < input.C; cin++){ 
-		// for each 4x4 dilated input matrix
-		// start H and W position of the input tile
-		// inside the tile
-		for (int i = 0; i < 4; i++){
-			for (int j = 0; j < 4; j++){
-				int posH = h+hh+i*dil;
-				int posW = w+ww+j*dil;
-				dilated_input[cin*16+i*4+j] = input.data[n*input.H*input.W*input.C+cin*input.H*input.W+posH*input.W+posW];
+
+	float dilated_input[16*4*4];
+	float BTx[16*4*4];
+	float V[16*4*4];
+	float M[4*4];
+	float ATM[4*4];
+	float ATMA[4*4];
+
+	for (int batch = 0; batch < BATCH;batch++){
+		int idx = start_idx + batch;
+		int n = idx/(output.C * ((input.H-dil*2)/(dil*2)) *((input.W-dil*2)/(dil*2)) * dil * dil);
+		int cout = (idx%(output.C*((input.H-dil*2)/(dil*2))*((input.W-dil*2)/(dil*2))*dil*dil))/(((input.H-dil*2)/(dil*2))*((input.W-dil*2)/(dil*2))*dil*dil);
+		int h = (idx%(((input.H-dil*2)/(dil*2))*((input.W-dil*2)/(dil*2))*dil*dil))/(((input.W-dil*2)/(dil*2))*dil*dil)*(dil*2);
+		int w = ((idx%(((input.W-dil*2)/(dil*2))*dil*dil))/(dil*dil))*(dil*2);
+		int hh = (idx%(dil*dil))/(dil);
+		int ww = idx%dil;
+
+		// channels of the tile
+		for (int cin = 0; cin < input.C; cin++){ 
+			// for each 4x4 dilated input matrix
+			// start H and W position of the input tile
+			// inside the tile
+			for (int i = 0; i < 4; i++){
+				for (int j = 0; j < 4; j++){
+					int posH = h+hh+i*dil;
+					int posW = w+ww+j*dil;
+					dilated_input[cin*16+i*4+j] = input.data[n*input.H*input.W*input.C+cin*input.H*input.W+posH*input.W+posW];
+				}
+			}
+
+			// use 4x4 input matrix with cin channels to calculate BTxB
+			// Sparse
+			for (int j = 0; j < 4; j++) {
+				BTx[cin * 16 + 0 * 4 + j] = dilated_input[cin*16+0*4+j] - dilated_input[cin*16+2*4+j];
+				BTx[cin * 16 + 1 * 4 + j] = dilated_input[cin*16+1*4+j] + dilated_input[cin*16+2*4+j];
+				BTx[cin * 16 + 2 * 4 + j] = - dilated_input[cin*16+1*4+j] + dilated_input[cin*16+2*4+j];
+				BTx[cin * 16 + 3 * 4 + j] = dilated_input[cin*16+1*4+j] - dilated_input[cin*16+3*4+j];
+			}
+
+			// (4x4),(4x4) -> (4,4)
+			for (int i = 0; i < 4; ++i){
+				V[cin * 16 + i * 4 + 0] = BTx[cin*16+i*4+0] - BTx[cin*16+i*4+2];
+				V[cin * 16 + i * 4 + 1] = BTx[cin*16+i*4+1] + BTx[cin*16+i*4+2];
+				V[cin * 16 + i * 4 + 2] = - BTx[cin*16+i*4+1] + BTx[cin*16+i*4+2];
+				V[cin * 16 + i * 4 + 3] = BTx[cin*16+i*4+1] - BTx[cin*16+i*4+3];
 			}
 		}
 
-		// use 4x4 input matrix with cin channels to calculate BTxB
-		// Sparse
+		// Use NCHW data layout for inner product
+		// intialize M
+		for (int i = 0; i < 4; ++i) {
+			for (int j = 0; j < 4; ++j) {
+				M[i*4+j] = 0;
+			}
+		}
+		// calculate M 
+		for (int cin = 0; cin < input.C; ++cin){
+			for (int i = 0; i < 4; ++i) {
+				for (int j = 0; j < 4; ++j) {
+					M[i*4+j] += U[cout*input.C*16+cin*16+i*4+j] * V[cin*16+i*4+j];
+				}
+			}
+		}
+		// ATMA
+		// (2x4),(4x4) -> (2,4)
 		for (int j = 0; j < 4; j++) {
-			BTx[cin * 16 + 0 * 4 + j] = dilated_input[cin*16+0*4+j] - dilated_input[cin*16+2*4+j];
-			BTx[cin * 16 + 1 * 4 + j] = dilated_input[cin*16+1*4+j] + dilated_input[cin*16+2*4+j];
-			BTx[cin * 16 + 2 * 4 + j] = - dilated_input[cin*16+1*4+j] + dilated_input[cin*16+2*4+j];
-			BTx[cin * 16 + 3 * 4 + j] = dilated_input[cin*16+1*4+j] - dilated_input[cin*16+3*4+j];
+			ATM[0*4+j] = M[0*4+j]+M[1*4+j]+M[2*4+j];
+			ATM[1*4+j] = M[1*4+j]-M[2*4+j]-M[3*4+j];
+		}
+		
+		// (2x4),(4x2) -> (2,2)
+		for (int i = 0; i < 2; i++) {
+			ATMA[i*2 + 0] = ATM[i*4+0]+ATM[i*4+1]+ATM[i*4+2];
+			ATMA[i*2 + 1] = ATM[i*4+1]-ATM[i*4+2]-ATM[i*4+3];
 		}
 
-		// (4x4),(4x4) -> (4,4)
-		for (int i = 0; i < 4; ++i){
-			V[cin * 16 + i * 4 + 0] = BTx[cin*16+i*4+0] - BTx[cin*16+i*4+2];
-			V[cin * 16 + i * 4 + 1] = BTx[cin*16+i*4+1] + BTx[cin*16+i*4+2];
-			V[cin * 16 + i * 4 + 2] = - BTx[cin*16+i*4+1] + BTx[cin*16+i*4+2];
-			V[cin * 16 + i * 4 + 3] = BTx[cin*16+i*4+1] - BTx[cin*16+i*4+3];
-		}
+		// map ATMA to the output matrix:
+		int H_start = h+hh;
+		int W_start = w+ww;
+		output.data[n*output.H*output.W*output.C+cout*output.H*output.W + H_start*output.W + W_start] = ATMA[0];
+		output.data[n*output.H*output.W*output.C+cout*output.H*output.W+ (H_start)*output.W + (W_start+dil)] = ATMA[1];
+		output.data[n*output.H*output.W*output.C+cout*output.H*output.W+ (H_start+dil)*output.W + (W_start)] = ATMA[2];
+		output.data[n*output.H*output.W*output.C+cout*output.H*output.W+ (H_start+dil)*output.W + (W_start+dil)] = ATMA[3];
 	}
-
-	// compute M matrix for one output channel
-	for (int i = 0; i < 4; ++i) {
-		for (int j = 0; j < 4; ++j) {
-			accum = 0.0f;
-			// TODO: maybe HWC instead of CHW? or change algorithm?
-			for (int cin = 0; cin < input.C; ++cin){
-				accum += U[cout*input.C*16+cin*16+i*4+j] * V[cin*16+i*4+j];
-			}
-			M[i*4+j] = accum;
-		}
-	}
-
-	// ATMA
-	// (2x4),(4x4) -> (2,4)
-	for (int j = 0; j < 4; j++) {
-		ATM[0*4+j] = M[0*4+j]+M[1*4+j]+M[2*4+j];
-		ATM[1*4+j] = M[1*4+j]-M[2*4+j]-M[3*4+j];
-	}
-	
-	// (2x4),(4x2) -> (2,2)
-	for (int i = 0; i < 2; i++) {
-		ATMA[i*2 + 0] = ATM[i*4+0]+ATM[i*4+1]+ATM[i*4+2];
-		ATMA[i*2 + 1] = ATM[i*4+1]-ATM[i*4+2]-ATM[i*4+3];
-	}
-
-	// // map ATMA to the output matrix:
-	int H_start = h+hh;
-	int W_start = w+ww;
-	output.data[n*output.H*output.W*output.C+cout*output.H*output.W + H_start*output.W + W_start] = ATMA[0];
-	output.data[n*output.H*output.W*output.C+cout*output.H*output.W+ (H_start)*output.W + (W_start+dil)] = ATMA[1];
-	output.data[n*output.H*output.W*output.C+cout*output.H*output.W+ (H_start+dil)*output.W + (W_start)] = ATMA[2];
-	output.data[n*output.H*output.W*output.C+cout*output.H*output.W+ (H_start+dil)*output.W + (W_start+dil)] = ATMA[3];
-	free(dilated_input);
-	free(BTx);
-	free(V);
-	free(M);
-	free(ATM);
-	free(ATMA);
 }
 
 
 int main(){		
-	int N = 8;
+	int N = 4;
 	// Hin needs to be multiple of 2*dilH
-	int Hin = 32;
-	int Win = 32;
-	int Cin = 8;
-	int Cout = 8;
+	int Hin = 128;
+	int Win = 128;
+	int Cin = 16;
+	int Cout = 16;
 	int Hk = 3;
 	int Wk = 3;
-	int dilH = 4;
-	int dilW = 4;
+	int dilH = 2;
+	int dilW = 2;
 	// fixed to 0 for convinience
 	int padH = 0;
 	int padW = 0;
 	// fixed to 1
 	int strideH = 1;
 	int strideW = 1;
+
+	int p = 256*1;
+	int block_size = 256;
+
 	printf("N = %d\n",N);
 	printf("Cout = %d\n",Cout);
 	printf("Cin = %d\n",Cin);
 	printf("Hin = %d\n",Hin);
 	printf("Win = %d\n",Win);
+	
 	float* A = (float*)malloc(sizeof(float) * N * Hin * Win * Cin);
 	float* B = (float*)malloc(sizeof(float) * Cout * Hk * Wk * Cin);
 	struct tensor_ input = { .data = A, .N = N, .H = Hin, .W = Win,  .C = Cin,.SIZE = Hin * Win * N * Cin };
@@ -263,20 +265,19 @@ int main(){
 	// time
 	struct timespec start, stop;
 	double time;
+	int dil = kernel.dilH;
+	int THREAD = (N*output.C * ((input.H-dil*2)/(dil*2)) *((input.W-dil*2)/(dil*2)) * dil * dil);
 
+	dim3 dimGrid(MAX(p/block_size,1));
+	dim3 dimBlock(MIN(block_size,THREAD));
+	printf("Grid Size = %d\n",  MAX(p/block_size,1));
+	printf("Block Size = %d\n\n",  MIN(block_size,THREAD));
 
 	////////////////////////////
 	// Direct Convolution GPU //
 	////////////////////////////
-
+	printf("Direct convolution optimal thread = %d\n",  N*kernel.Cout*Hout*Wout);
 	if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}	
-	// block and grid size 
-	int THREAD = N*kernel.Cout*Hout*Wout;
-	// dim3 dimGrid(961);
-	// dim3 dimBlock(1024);
-	dim3 dimGrid(THREAD);
-	dim3 dimBlock(1);
-	printf("Total number of thread = %d\n",  N*kernel.Cout*Hout*Wout);
 	// call kernel direct_convolution_gpu
 	conv2d_direct_convolution_gpu<<<dimGrid, dimBlock>>> (input_gpu,kernel_gpu,output_gpu);
 	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
@@ -297,23 +298,21 @@ int main(){
 	// call kernel winograd
 	float* U = cudaNew_(kernel.Cout*kernel.Cin*4*4);
 	float* Gg = cudaNew_(kernel.Cout*kernel.Cin*4*3);
-	// define Grid and Block size
-	int dil = kernel.dilH;
-	printf("Total number of thread = %d\n", (N*output.C * ((input.H-dil*2)/(dil*2)) *((input.W-dil*2)/(dil*2)) * dil * dil));
-	dim3 dimGrid2((N*output.C * ((input.H-dil*2)/(dil*2)) *((input.W-dil*2)/(dil*2)) * dil * dil));
-	dim3 dimBlock2(1);
+	printf("Winograd optimal thread = %d\n", (N*output.C * ((input.H-dil*2)/(dil*2)) *((input.W-dil*2)/(dil*2)) * dil * dil));
 	// Call U kernel and compute U
-	wino23s1d2_GgGT_kernel<<<dimGrid2, dimBlock2>>> (kernel_gpu,Gg,U);
+	wino23s1d2_GgGT_kernel<<<1,1>>> (kernel_gpu,Gg,U);
 	// Call winograd kernel	
 	// start timer
 	if(clock_gettime(CLOCK_REALTIME, &start) == -1 ) { perror( "clock gettime" );}	
-	wino23s1d2_BTxB_EWMM_ATMA_kernel<<< dimGrid2, dimBlock2>>> (input_gpu,output2_gpu,U,kernel.dilH);
-	output2 = tensor2cpu(output2_gpu);
+	wino23s1d2_BTxB_EWMM_ATMA_kernel<<< dimGrid, dimBlock>>> (input_gpu,output2_gpu,U,kernel.dilH);
 	if( clock_gettime( CLOCK_REALTIME, &stop) == -1 ) { perror( "clock gettime" );}	 
+	output2 = tensor2cpu(output2_gpu);
 	time = (stop.tv_sec - start.tv_sec)+ (double)(stop.tv_nsec - start.tv_nsec)/1e9;
 	printf("Winograd GPU time is %f ns\n", time*1e9);
 	// print_tensor(output2);
 	check_tensor(golden,output2);
+
+
 	// // free pointers
 	// free_(kernel.data);
 	// // free(input.data);

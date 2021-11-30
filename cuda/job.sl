@@ -8,4 +8,3 @@
 
 ./conv2d_gpu
 
-
