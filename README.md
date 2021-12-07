@@ -15,6 +15,8 @@ To run GPU version:
     sbatch job.sl
     vim conv2d_gpu.out
 
+Winograd Data folder contains some of the GPU results obtained using k40 GPU.
+
 NOTE:
 
 The CPU winograd only support dilation = 2. It takes a 8x8 input tile and break it into four 7x7 tile for a winograd with dilated kernel. The output is a 4x4 tile merged from four 3x3 tiles. It makes parallelization difficult, so in the GPU version, I sample the winograd input in a dilated fashion and use the original 3x3 kernel for winograd instead of 5x5. As a result, in my GPU dilated winograd implementation, the input tile size and output size will be the same as a normal F(2x2,3x3) winograd.
