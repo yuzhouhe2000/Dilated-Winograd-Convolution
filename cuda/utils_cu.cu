@@ -61,7 +61,7 @@ struct kernel_ kernel2cpu(struct kernel_ kernel_gpu){
 	return kernel_gpu;
 }
 
-float* data2gpu(float* input,int SIZE){
+float* data2gpu(float* input,unsigned long int SIZE){
 	float* input_gpu;
 	cudaMalloc((void **) &input_gpu, sizeof(float)*SIZE);
 	cudaMemcpy(input_gpu,input,sizeof(float)*SIZE,cudaMemcpyHostToDevice);
@@ -69,7 +69,7 @@ float* data2gpu(float* input,int SIZE){
 	return input_gpu;
 }
 
-float* data2cpu(float* input_gpu,int SIZE){
+float* data2cpu(float* input_gpu,unsigned long int SIZE){
 	float* input = (float*)malloc(sizeof(float) * SIZE);
 	cudaMemcpy(input,input_gpu,sizeof(float)*SIZE,cudaMemcpyDeviceToHost);
 	cudaFree_(input_gpu);
@@ -255,7 +255,7 @@ __host__ struct kernel_ kernel_simple_dilation(struct kernel_ kernel){
 
 	int newH = (kernel.dilH-1) * (kernel.H-1)+kernel.H;
 	int newW = (kernel.dilW-1) * (kernel.W-1)+kernel.W;
-	int newSize = kernel.Cout * newH * newW * kernel.Cin;
+	unsigned long int newSize = kernel.Cout * newH * newW * kernel.Cin;
 	float* B_dil = (float*)malloc(sizeof(float) * newSize);
 	for (int i = 0; i < newSize; i++) {
 		B_dil[i] = 0.0f;
@@ -292,7 +292,7 @@ struct tensor_ tensor_pad(struct tensor_ input,int padH,int padW){
 	int kernel_idx;
 	int newH = input.H+2*padH;
 	int newW = input.W+2*padW;
-	int newSize = input.C * newH * newW * input.N;
+	unsigned long int newSize = input.C * newH * newW * input.N;
 	float* output = (float*)malloc(sizeof(float) * newSize);
 	for (int n = 0; n < input.N; n++) {
 		for (int hout = 0; hout < newH; hout++) {
@@ -309,7 +309,7 @@ struct tensor_ tensor_pad(struct tensor_ input,int padH,int padW){
 			}
 		}
 	}
-	struct tensor_ padded = { .data = output,.N = input.N, .H = newH, .W = newW,  .C = input.C,.SIZE = newH*newW*input.N*input.C};
+	struct tensor_ padded = { .data = output,.N = input.N, .H = newH, .W = newW,  .C = input.C,.SIZE = newSize};
 	print_tensor(padded);
 	return padded;
 } 

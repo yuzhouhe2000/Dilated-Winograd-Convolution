@@ -22,10 +22,9 @@ The CPU winograd only support dilation = 2. It takes a 8x8 input tile and break 
 
 TODO:
 
-- [ ] parameter vs. performance graph
+
 - [ ] project report
 - [ ] CuDNN baseline
-- [ ] CUDA accelerated im2col
 
 
 DONE:
@@ -35,5 +34,7 @@ DONE:
 - [x] CPU im2col
 - [x] CPU dilated winograd
 - [x] CUDA accelerated direct convolution
+- [x] CUDA accelerated im2col
 - [x] CUDA accelerated dilated winograd
 - [x] improve CUDA accelerated winograd 
+- [x] parameter vs. performance graph
