@@ -157,9 +157,9 @@ struct tensor_ conv2d_dilated_winograd23s1d2_cpu1(struct tensor_ input_raw, stru
 
 int main(void){		
 	omp_set_num_threads(4);
-	int N = 4;
-	int Hin = 128;
-	int Win = 128;
+	int N = 16;
+	int Hin = 28;
+	int Win = 28;
 	int Cin = 16;
 	int Cout = 16;
 	int Hk = 3;

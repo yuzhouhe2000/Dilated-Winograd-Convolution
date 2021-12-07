@@ -280,7 +280,7 @@ int main(){
 	int strideH = 1;
 	int strideW = 1;
 	// Choose from 1 to 4096
-	int p = 1024;
+	int p = 32;
 	// Choose from 1 to 1024
 	int block_size = 32;
 	int dil = dilH;
