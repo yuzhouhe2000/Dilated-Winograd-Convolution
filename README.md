@@ -15,7 +15,7 @@ To run GPU version:
     sbatch job.sl
     vim conv2d_gpu.out
 
-Winograd Data folder contains some of the GPU results obtained using k40 GPU.
+"resuls" folder contains some of the GPU results obtained using k40 GPU.
 
 NOTE:
 
