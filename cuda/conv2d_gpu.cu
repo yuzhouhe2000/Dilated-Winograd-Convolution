@@ -45,10 +45,10 @@ struct tensor_ conv2d_direct_convolution_cpu(struct tensor_ input, struct kernel
 	return output;
 }
 
+// empty kernel launch
 __global__ void initialize(){}
 
 
-__global__ void conv2d_direct_convolution_gpu_empty(struct tensor_ input, struct kernel_ kernel, struct tensor_ output){};
 // Naive implementation of direct convolution on CPU. Tensor in NCHW layout.
 __global__ void conv2d_direct_convolution_gpu(struct tensor_ input, struct kernel_ kernel, struct tensor_ output){
 	// Distribute computation of each output pixel to a separate cuda kernel
@@ -100,7 +100,6 @@ float* conv2d_im2col_preprocessing(struct tensor_ input, struct kernel_ kernel_r
 	return im2col;
 }
 
-__global__ void im2col_convolution_gpu_empty(float* input, struct kernel_ kernel, struct tensor_ output, int N,int dil){};
 __global__ void im2col_convolution_gpu(float* input, struct kernel_ kernel, struct tensor_ output, int N,int dil){
 	int X = kernel.Cout;
 	int Z = output.H*output.W;
@@ -165,13 +164,11 @@ __global__ void wino23s1d2_GgGT_kernel(struct kernel_ kernel,float* Gg,float* Gg
 	}
 }
 
-__global__ void wino23s1d2_BTxB_EWMM_ATMA_kernel_empty(struct tensor_ input,struct tensor_ output,float* U,int dil){};
 
 
 __global__ void wino23s1d2_BTxB_EWMM_ATMA_kernel(struct tensor_ input,struct tensor_ output,float* U,int dil){
 	
-	// Distribute computation of each output pixel to a separate cuda kernel
-	// Original structure:
+	// Distribute computation of each output tile to a separate cuda kernel
 	unsigned long int p = blockIdx.x*blockDim.x + threadIdx.x;
 	unsigned long int BATCH = ((input.N*output.C * ((input.H-dil*2)/(dil*2)) *((input.W-dil*2)/(dil*2)) * dil * dil))/(blockDim.x*gridDim.x);
 	unsigned long int start_idx = p * BATCH;
@@ -230,6 +227,7 @@ __global__ void wino23s1d2_BTxB_EWMM_ATMA_kernel(struct tensor_ input,struct ten
 				M[i*4+j] = 0;
 			}
 		}
+
 		// calculate M 
 		for (int cin = 0; cin < input.C; ++cin){
 			for (int i = 0; i < 4; ++i) {
@@ -238,6 +236,7 @@ __global__ void wino23s1d2_BTxB_EWMM_ATMA_kernel(struct tensor_ input,struct ten
 				}
 			}
 		}
+
 		// ATMA
 		// (2x4),(4x4) -> (2,4)
 		for (int j = 0; j < 4; j++) {
@@ -279,14 +278,13 @@ int main(){
 	// fixed to 1
 	int strideH = 1;
 	int strideW = 1;
-	// Choose from 1 to 4096
+	// Choose from 1 to 1024
 	int p = 32;
 	// Choose from 1 to 1024
 	int block_size = 32;
 	int dil = dilH;
 
 
-	
 	printf("N = %d\n",N);
 	printf("Cout = %d\n",Cout);
 	printf("Cin = %d\n",Cin);
@@ -327,7 +325,6 @@ int main(){
 	int Hout = ((input.H + 2*kernel.padH - kernel.dilH * (kernel.H - 1) - 1)/kernel.strideH) + 1;
 	int Wout = ((input.W + 2*kernel.padW - kernel.dilW * (kernel.W - 1) - 1)/kernel.strideW) + 1;
 	unsigned long int output_size = Hout*Wout*input.N*kernel.Cout;
-	// load data to gpu
 
 	// direct convolution
 	float* output_data = (float*)malloc(sizeof(float) * input.N * Hout * Wout * kernel.Cout);
@@ -343,12 +340,8 @@ int main(){
 
 	// // Im2col intialization
 	// // disabled, because im2col transformation is only available in CPU.
-	
 	struct kernel_ dilated_kernel = kernel_simple_dilation(kernel);
 	unsigned long int im2col_size = input.N*input.C * dilated_kernel.H * dilated_kernel.W * Hout * Wout;
-	// fake im2col_input, i used fake value here to save time.
-	// float* im2col_input = (float*)malloc(sizeof(float) * im2col_size);
-	// // should have use this:
 	float* im2col_input = conv2d_im2col_preprocessing(input,kernel);
 	float* im2col_input_gpu = data2gpu(im2col_input,im2col_size);
 	struct kernel_ dilated_kernel_gpu = kernel2gpu(dilated_kernel);
@@ -374,8 +367,9 @@ int main(){
 	
 
 
-	// First time kernel load takes long time. So start an empty one first.
+	// First time kernel launch takes long time. So start an empty one first.
 	initialize<<<dimGrid, dimBlock>>> ();
+
 	////////////////////////////
 	// Direct Convolution GPU //
 	////////////////////////////
